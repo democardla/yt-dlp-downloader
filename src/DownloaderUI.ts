@@ -11,13 +11,22 @@ import {
 } from "@opentui/core"
 import { readdirSync } from "node:fs"
 import { resolve } from "node:path"
-import { ProgressBarRenderable, StatusSelectRenderable, StyledSelectRenderable, TabBarRenderable } from "./components"
+import {
+  ProgressBarRenderable,
+  StatusSelectRenderable,
+  StyledSelectRenderable,
+  TabBarRenderable,
+  writeAppConsole,
+} from "./components"
 import {
   startDownload,
   type DownloadOptions,
   type DownloadStatus,
 } from "./downloader"
 import { getDefaultDownloadDirectory, revealInFileManager, type Toolchain } from "./runtime/Toolchain"
+import {
+  rememberDownloadedFile,
+} from "./runtime/DownloadHistory"
 import { Configs } from "./handles/Configs"
 
 // ---------------------------------------------------------------------------
@@ -49,7 +58,13 @@ export interface DownloaderFeature {
 }
 
 /** 创建下载器业务逻辑：构建界面、绑定事件、管理下载列表与状态 */
-export function createDownloaderFeature(renderer: CliRenderer, toolchain: Toolchain): DownloaderFeature {
+export function createDownloaderFeature(
+  renderer: CliRenderer,
+  toolchain: Toolchain,
+  onHistoryChanged?: () => void,
+): DownloaderFeature {
+  // The completed tab is session-only. Persistent records are shown in the
+  // top-level Download History tab instead.
   const downloads: DownloadItem[] = []
   let activeTab: 0 | 1 | 2 = 0 // 0 = 下载中, 1 = 已完成, 2 = 未成功
 
@@ -196,6 +211,15 @@ export function createDownloaderFeature(renderer: CliRenderer, toolchain: Toolch
   rightPanel.add(innerTabs)
   rightPanel.add(listContainer)
 
+  const revealDownload = (filePath: string) => {
+    const revealed = revealInFileManager(filePath)
+    if (revealed) {
+      writeAppConsole("log", `[文件跳转] 已发送文件定位命令：${filePath}`)
+    } else {
+      writeAppConsole("error", `[文件跳转] 找不到文件或无法打开：${filePath}`)
+    }
+  }
+
   const root = new BoxRenderable(renderer, {
     id: "downloader-root",
     flexDirection: "row",
@@ -264,8 +288,8 @@ export function createDownloaderFeature(renderer: CliRenderer, toolchain: Toolch
         selectable: false,
       })
       if (item.status === "done" && item.outputPath) {
-        titleText.onMouseDown = () => revealInFileManager(item.outputPath!)
-        row.onMouseDown = () => revealInFileManager(item.outputPath!)
+        titleText.onMouseDown = () => revealDownload(item.outputPath!)
+        row.onMouseDown = () => revealDownload(item.outputPath!)
       }
       row.add(titleText)
       if (item.status === "downloading") {
@@ -289,7 +313,7 @@ export function createDownloaderFeature(renderer: CliRenderer, toolchain: Toolch
           selectable: false,
         })
         if (item.status === "done" && item.outputPath) {
-          statusText.onMouseDown = () => revealInFileManager(item.outputPath!)
+          statusText.onMouseDown = () => revealDownload(item.outputPath!)
         }
         row.flexDirection = "row"
         row.justifyContent = "space-between"
@@ -337,6 +361,18 @@ export function createDownloaderFeature(renderer: CliRenderer, toolchain: Toolch
       presetPath,
     }
 
+    let historySaved = false
+    let savedHistoryPaths: string[] = []
+    const saveCompletedPath = (path: string) => {
+      const alreadySaved = historySaved && item.outputPath === path
+      item.outputPath = path
+      if (!alreadySaved) {
+        savedHistoryPaths = rememberDownloadedFile(path)
+        historySaved = true
+        onHistoryChanged?.()
+      }
+    }
+
     item.kill = startDownload(opts, {
       onTitle: (title) => {
         item.title = title
@@ -349,13 +385,40 @@ export function createDownloaderFeature(renderer: CliRenderer, toolchain: Toolch
         renderList()
       },
       onOutputPath: (path) => {
-        item.outputPath = path
+        // yt-dlp emits this from after_move, so the file has already reached
+        // its final location. Persist the history immediately instead of
+        // waiting for the child process exit event.
+        saveCompletedPath(path)
+        // Use the final filename once yt-dlp has reported the final path, so
+        // the displayed name and the jump target refer to the same value.
+        const fileName = path.slice(Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1)
+        if (fileName) item.title = fileName
         renderList()
       },
       onDone: ({ outputPath }) => {
         item.status = "done"
         item.percent = 100
-        if (outputPath) item.outputPath = outputPath
+
+        const completedPath = outputPath ?? item.outputPath
+        if (completedPath) {
+          if (!historySaved || item.outputPath !== completedPath) saveCompletedPath(completedPath)
+          const historySet = new Set(savedHistoryPaths)
+
+          // Keep active/error tasks, but trim completed items to the persisted
+          // ten most recent successful downloads.
+          for (let index = downloads.length - 1; index >= 0; index--) {
+            const existing = downloads[index]
+            if (!existing) continue
+            if (existing !== item && existing.status === "done" && existing.outputPath
+              && (existing.outputPath === completedPath || !historySet.has(existing.outputPath))) {
+              downloads.splice(index, 1)
+            }
+          }
+
+          const itemIndex = downloads.indexOf(item)
+          if (itemIndex >= 0) downloads.splice(itemIndex, 1)
+          downloads.unshift(item)
+        }
         renderList()
       },
       onError: (msg) => {

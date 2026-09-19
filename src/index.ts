@@ -6,8 +6,9 @@ import {
   type Renderable,
 } from "@opentui/core"
 import { createDownloaderFeature } from "./DownloaderUI"
+import { createDownloadHistoryFeature, type DownloadHistoryFeature } from "./DownloadHistoryUI"
 import { createSettingsFeature } from "./SettingsUI"
-import { ConsolePanelRenderable, TabBarRenderable, writeAppConsole } from "./components"
+import { ActionButtonRenderable, ConsolePanelRenderable, TabBarRenderable, writeAppConsole } from "./components"
 import { access, mkdir } from "node:fs/promises";
 import { resolveToolchain } from "./runtime/Toolchain"
 
@@ -35,9 +36,6 @@ try {
     await mkdir(dir, { recursive: true });
 }
 
-// Resolve the host and all external binaries before constructing download UI.
-const toolchain = resolveToolchain()
-
 // ---------------------------------------------------------------------------
 // 渲染器
 // ---------------------------------------------------------------------------
@@ -58,9 +56,6 @@ interface Feature {
   focusFirst(): void
 }
 
-// 下载器（真实功能）
-const downloader: Feature = createDownloaderFeature(renderer, toolchain)
-
 // 设置页（真实功能）
 const settings: Feature = createSettingsFeature(renderer)
 let appConfigs: Configs
@@ -71,20 +66,15 @@ try {
 }
 const consolePanel = new ConsolePanelRenderable(renderer, { enabled: appConfigs.console.enabled })
 
-const toolchainHeader = `系统：${toolchain.operatingSystem} (${toolchain.platform})`
-writeAppConsole("log", toolchainHeader)
-for (const [name, path] of [
-  ["ffmpeg", toolchain.ffmpegPath],
-  ["ffprobe", toolchain.ffprobePath],
-  ["yt-dlp", toolchain.ytDlpPath],
-] as const) {
-  const message = `${name}: ${path ?? "未找到"}`
-  writeAppConsole(path ? "log" : "error", message)
-}
-if (!toolchain.ready) {
-  const message = `工具链未准备完成，下载功能暂不可用：${toolchain.diagnostics.join("；")}`
-  writeAppConsole("error", message)
-}
+// Resolve the host and all external binaries after the console exists, so the
+// startup lookup is visible in the app log just like a manual refresh.
+writeAppConsole("log", "启动检测：开始扫描工具路径（环境变量路径 + PATH）")
+const toolchain = await resolveToolchain()
+logToolchainResult("启动检测", toolchain)
+
+// 下载器（真实功能）
+const downloadHistory: DownloadHistoryFeature = createDownloadHistoryFeature(renderer)
+const downloader: Feature = createDownloaderFeature(renderer, toolchain, downloadHistory.refresh)
 
 // 关于（占位）
 function createPlaceholderFeature(id: string, title: string, body: string): Feature {
@@ -114,7 +104,7 @@ const about: Feature = createPlaceholderFeature(
   "yt-dlp 下载器\n基于 OpenTUI + yt-dlp\n\n输入视频链接即可下载为 mp4 / mp3"
 )
 
-const features: Feature[] = [downloader, settings, about]
+const features: Feature[] = [downloader, downloadHistory, settings, about]
 
 // ---------------------------------------------------------------------------
 // 顶部标签页（切换功能）
@@ -122,14 +112,38 @@ const features: Feature[] = [downloader, settings, about]
 
 const featureTabs = new TabBarRenderable(renderer, {
   id: "feature-tabs",
-  width: "100%",
+  flexGrow: 1,
   options: [
     { name: " 下载器 ", description: "下载视频 / 音频" },
+    { name: " 下载历史 ", description: "最近成功下载的文件" },
     { name: " 设置 ", description: "配置参数" },
     { name: " 关于 ", description: "关于本工具" },
   ],
   onChange: (_option, index) => selectFeature(index),
 })
+
+const topBar = new BoxRenderable(renderer, {
+  id: "top-bar",
+  width: "100%",
+  height: 1,
+  flexDirection: "row",
+  alignItems: "center",
+})
+topBar.add(featureTabs)
+
+let refreshButton: ActionButtonRenderable | null = null
+let refreshingToolchain = false
+
+if (!toolchain.ready) {
+  refreshButton = new ActionButtonRenderable(renderer, {
+    id: "refresh-toolchain",
+    width: 14,
+    height: 1,
+    label: "刷新工具",
+    onActivate: refreshToolchain,
+  })
+  topBar.add(refreshButton)
+}
 
 // ---------------------------------------------------------------------------
 // 布局：顶部标签 + 内容区
@@ -147,7 +161,7 @@ const root = new BoxRenderable(renderer, {
   width: "100%",
   height: "100%",
 })
-root.add(featureTabs)
+root.add(topBar)
 root.add(content)
 root.add(consolePanel)
 
@@ -162,8 +176,51 @@ let focusIdx = 0
 
 function currentFocusables(): Renderable[] {
   const list = [...activeFeature.getFocusables(), featureTabs]
+  if (refreshButton) list.push(refreshButton)
   if (focusIdx >= list.length) focusIdx = 0
   return list
+}
+
+async function refreshToolchain() {
+  if (refreshingToolchain) return
+
+  refreshingToolchain = true
+  writeAppConsole("log", "刷新工具：按钮已触发，开始重新扫描工具路径")
+  try {
+    Object.assign(toolchain, await resolveToolchain())
+    logToolchainResult("刷新工具", toolchain)
+
+    if (toolchain.ready && refreshButton) {
+      topBar.remove(refreshButton.id)
+      refreshButton = null
+    }
+  } finally {
+    refreshingToolchain = false
+  }
+}
+
+function logToolchainResult(source: string, current: typeof toolchain) {
+  writeAppConsole("log", `${source}：本次检查的目录如下（每行一个）`)
+  if (current.searchedDirectories.length === 0) {
+    writeAppConsole("warn", `${source}：没有可检查的目录`)
+  } else {
+    for (const directory of current.searchedDirectories) {
+      writeAppConsole("log", `${source}：检查目录 ${directory}`)
+    }
+  }
+
+  for (const [name, path] of [
+    ["ffmpeg", current.ffmpegPath],
+    ["ffprobe", current.ffprobePath],
+    ["yt-dlp", current.ytDlpPath],
+  ] as const) {
+    writeAppConsole(path ? "log" : "error", `${source}：${name} = ${path ?? "未找到"}`)
+  }
+
+  writeAppConsole(current.ready ? "log" : "warn", `${source}：工具链${current.ready ? "已就绪" : "未就绪"}`)
+  if (current.diagnostics.length > 0) {
+    writeAppConsole("warn", `${source}：${current.diagnostics.join("；")}`)
+  }
 }
 
 function selectFeature(index: number) {

@@ -7,7 +7,12 @@ import { Configs } from "./handles/Configs"
 import { OutputConfig } from "./handles/OutputConfig"
 import { YtTask } from "./handles/YtTask"
 import { writeAppConsole } from "./components"
-import { getDefaultDownloadDirectory, toolchainEnvironment, type Toolchain } from "./runtime/Toolchain"
+import {
+  getDefaultDownloadDirectory,
+  normalizeFilePath,
+  toolchainEnvironment,
+  type Toolchain,
+} from "./runtime/Toolchain"
 
 /** 下载任务的实时进度回调 */
 export interface DownloadProgress {
@@ -179,25 +184,49 @@ function parseProgressLine(line: string): DownloadProgress | null {
   }
 }
 
+function parseOutputPathLine(line: string): string | null {
+  if (!line.startsWith("FILEPATH ")) return null
+  const path = normalizeFilePath(line.slice("FILEPATH ".length))
+  return path || null
+}
+
+const utf8Decoder = new TextDecoder("utf-8", { fatal: true })
+// Bun supports this WHATWG decoder label, although the bundled TypeScript
+// definitions expose only the narrower standard encoding union.
+const gb18030Decoder = new TextDecoder("gb18030" as never)
+
+/** Decode tool output from UTF-8, with a Windows GB18030 fallback. */
+function decodeToolText(bytes: Uint8Array): string {
+  try {
+    return utf8Decoder.decode(bytes)
+  } catch {
+    return gb18030Decoder.decode(bytes)
+  }
+}
+
 /** 逐行读取可读流 */
 async function readLines(
   stream: ReadableStream<Uint8Array>,
   onLine: (line: string) => void
 ): Promise<void> {
   const reader = stream.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ""
+  let buffer = new Uint8Array(0)
   while (true) {
     const { done, value } = await reader.read()
     if (done) break
-    buffer += decoder.decode(value, { stream: true })
+
+    const next = new Uint8Array(buffer.length + value.length)
+    next.set(buffer)
+    next.set(value, buffer.length)
+    buffer = next
+
     let idx: number
-    while ((idx = buffer.indexOf("\n")) >= 0) {
-      onLine(buffer.slice(0, idx))
+    while ((idx = buffer.indexOf(0x0a)) >= 0) {
+      onLine(decodeToolText(buffer.slice(0, idx)).replace(/\r$/, ""))
       buffer = buffer.slice(idx + 1)
     }
   }
-  if (buffer) onLine(buffer)
+  if (buffer.length > 0) onLine(decodeToolText(buffer).replace(/\r$/, ""))
 }
 
 /** 把 yt-dlp 的一行输出写入底部控制台（进度行已在列表展示，跳过避免刷屏） */
@@ -248,7 +277,7 @@ export function startDownload(opts: DownloadOptions, cb: DownloadCallbacks, tool
   const readTitle = () => {
     if (titleSet) return
     try {
-      const t = readFileSync(titleFile, "utf8").trim()
+      const t = decodeToolText(readFileSync(titleFile)).trim()
       if (t) {
         titleSet = true
         cb.onTitle(t)
@@ -258,27 +287,34 @@ export function startDownload(opts: DownloadOptions, cb: DownloadCallbacks, tool
     }
   }
 
-  // stdout：状态日志 + PROGRESS 进度行（yt-dlp 的进度与状态都走 stdout）
-  void readLines(proc.stdout, (line) => {
+  const handleOutputLine = (line: string) => {
     readTitle()
+    const parsedOutputPath = parseOutputPathLine(line)
+    if (parsedOutputPath) {
+      outputPath = parsedOutputPath
+      cb.onOutputPath(parsedOutputPath)
+      return
+    }
+
     const progress = parseProgressLine(line)
-    if (line.startsWith("FILEPATH ")) {
-      outputPath = line.slice("FILEPATH ".length).trim()
-      if (outputPath) cb.onOutputPath(outputPath)
-    } else if (progress) {
+    if (progress) {
       cb.onProgress(progress)
     } else {
       logToConsole(line)
     }
-  })
+  }
 
-  // stderr：WARNING / ERROR 等
-  void readLines(proc.stderr, (line) => {
-    logToConsole(line)
-  })
+  // Keep both stream promises. The process can exit before the final stdout
+  // chunk has been delivered; waiting for both prevents a completed item from
+  // being rendered before its output path is available.
+  const stdoutDone = readLines(proc.stdout, handleOutputLine)
+
+  // stderr：WARNING / ERROR 等。也解析 FILEPATH，以兼容不同 yt-dlp 输出配置。
+  const stderrDone = readLines(proc.stderr, handleOutputLine)
 
   // 等待进程结束
-  void proc.exited.then((code) => {
+  void proc.exited.then(async (code) => {
+    await Promise.all([stdoutDone, stderrDone])
     readTitle()
     if (code === 0) {
       console.log("✔ 下载完成")

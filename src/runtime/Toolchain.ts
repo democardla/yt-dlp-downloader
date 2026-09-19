@@ -11,6 +11,7 @@ export interface Toolchain {
   ytDlpPath: string | null
   ready: boolean
   diagnostics: string[]
+  searchedDirectories: string[]
 }
 
 export function getDefaultDownloadDirectory(platform: NodeJS.Platform = process.platform): string {
@@ -91,36 +92,182 @@ function resolveCandidate(value: string | null, names: readonly string[]): strin
   return null
 }
 
-function resolveFromPath(names: readonly string[]): string | null {
-  const pathValue = getEnvironmentValue(["PATH"])
-  if (!pathValue) return null
+function splitPathValues(values: readonly string[]): string[] {
+  return [...new Set(values
+    .flatMap((value) => value.split(delimiter))
+    .map((directory) => directory.trim().replace(/^['"]|['"]$/g, ""))
+    .filter(Boolean))]
+}
 
-  for (const directory of pathValue.split(delimiter)) {
-    if (!directory) continue
+async function getPathDirectories(): Promise<string[]> {
+  const processPath = getEnvironmentValue(["PATH"])
+
+  if (process.platform === "darwin") {
+    const shellPath = getEnvironmentValue(["SHELL"]) ?? "/bin/zsh"
+    const shellPathValue = await readPathFromShell(shellPath)
+    return splitPathValues([
+      ...(processPath ? [processPath] : []),
+      ...(shellPathValue ? [shellPathValue] : []),
+    ])
+  }
+
+  if (process.platform !== "win32") {
+    return splitPathValues(processPath ? [processPath] : [])
+  }
+
+  // Windows processes keep a startup snapshot of PATH. Read the current user
+  // and machine values so refresh can see PATH edits made while the app runs.
+  try {
+    const powershell = Bun.spawn([
+      "powershell.exe",
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      "$paths = @([Environment]::GetEnvironmentVariable('Path', 'Machine'), [Environment]::GetEnvironmentVariable('Path', 'User')); $paths | ForEach-Object { if ($_){ [Environment]::ExpandEnvironmentVariables($_) } } | ConvertTo-Json -Compress",
+    ], {
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "ignore",
+    })
+    const [exitCode, stdout] = await Promise.all([
+      powershell.exited,
+      new Response(powershell.stdout).text(),
+    ])
+
+    if (exitCode === 0 && stdout.trim()) {
+      const values = JSON.parse(stdout.trim()) as string | string[]
+      return splitPathValues([
+        ...(processPath ? [processPath] : []),
+        ...(Array.isArray(values) ? values : [values]),
+      ])
+    }
+  } catch {
+    // Fall back to the startup snapshot if the live environment is unavailable.
+  }
+
+  return splitPathValues(processPath ? [processPath] : [])
+}
+
+async function readPathFromShell(shellPath: string): Promise<string | null> {
+  const startMarker = "__YT_DLP_PATH_START__"
+  const endMarker = "__YT_DLP_PATH_END__"
+
+  try {
+    const shell = Bun.spawn([shellPath, "-lc", `printf '%s%s%s' '${startMarker}' "$PATH" '${endMarker}'`], {
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "ignore",
+    })
+    const [exitCode, stdout] = await Promise.all([
+      shell.exited,
+      new Response(shell.stdout).text(),
+    ])
+    if (exitCode !== 0) return null
+
+    const start = stdout.indexOf(startMarker)
+    const end = stdout.indexOf(endMarker, start + startMarker.length)
+    if (start < 0 || end < 0) return null
+    return stdout.slice(start + startMarker.length, end)
+  } catch {
+    return null
+  }
+}
+
+function resolveFromDirectories(names: readonly string[], directories: readonly string[]): string | null {
+
+  for (const directory of directories) {
     for (const name of candidateNames(names)) {
-      const candidate = resolve(directory.trim().replace(/^['"]|['"]$/g, ""), name)
+      const candidate = resolve(directory, name)
       if (isExecutableFile(candidate)) return candidate
     }
   }
   return null
 }
 
-function resolveTool(names: readonly string[], envKeys: readonly string[]): string | null {
-  return resolveCandidate(getEnvironmentValue(envKeys), names) ?? resolveFromPath(names)
+/** Normalize a path emitted by yt-dlp before it is shown or opened. */
+export function normalizeFilePath(filePath: string): string {
+  let value = filePath.trim().replaceAll("\u0000", "")
+  if (!value) return ""
+
+  // Some wrappers quote paths containing spaces. yt-dlp normally does not,
+  // but accepting both forms keeps the file-jump action platform-independent.
+  if (value.length >= 2) {
+    const first = value[0]
+    const last = value[value.length - 1]
+    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+      value = value.slice(1, -1).trim()
+    }
+  }
+  if (!value) return ""
+
+  // Be tolerant if a future output format returns a file URI instead of a
+  // native path. The current yt-dlp format emits native paths.
+  if (/^file:\/\//i.test(value)) {
+    try {
+      const url = new URL(value)
+      value = decodeURIComponent(url.pathname)
+      if (process.platform === "win32" && /^\/[A-Za-z]:/.test(value)) {
+        value = value.slice(1)
+      }
+    } catch {
+      // Keep the original value if it is not a valid file URI.
+    }
+  }
+
+  // Explorer does not reliably accept the Win32 extended-length prefix for
+  // selection. yt-dlp normally emits a regular path, but remove the prefix if
+  // it is supplied by a wrapper or a custom output template.
+  if (process.platform === "win32" && value.startsWith("\\\\?\\")) {
+    value = value.slice(4)
+  }
+
+  return resolve(value)
+}
+
+function getConfiguredDirectories(): string[] {
+  const values = [
+    getEnvironmentValue(TOOL_DEFINITIONS.ffmpeg.envKeys),
+    getEnvironmentValue(TOOL_DEFINITIONS.ffprobe.envKeys),
+    getEnvironmentValue(TOOL_DEFINITIONS.ytDlp.envKeys),
+  ].filter((value): value is string => Boolean(value))
+
+  return values.map((value) => {
+    const expanded = value.startsWith("~/")
+      ? join(process.env.HOME ?? process.env.USERPROFILE ?? "", value.slice(2))
+      : value
+    const absolute = resolve(expanded)
+    return isExecutableFile(absolute) ? dirname(absolute) : absolute
+  })
+}
+
+async function resolveTool(
+  names: readonly string[],
+  envKeys: readonly string[],
+  pathDirectories: readonly string[],
+): Promise<string | null> {
+  // Scan the current PATH first on every platform. This prevents a stale
+  // explicit path from hiding a newly configured binary in PATH. Windows gets
+  // .exe/.cmd/.bat candidates through candidateNames().
+  return resolveFromDirectories(names, pathDirectories)
+    ?? resolveCandidate(getEnvironmentValue(envKeys), names)
 }
 
 /** Resolve all external binaries before the UI and download processes start. */
-export function resolveToolchain(): Toolchain {
+export async function resolveToolchain(): Promise<Toolchain> {
   const platform = process.platform
   const operatingSystem = getOperatingSystem(platform)
-  const ffmpegPath = resolveTool(TOOL_DEFINITIONS.ffmpeg.names, TOOL_DEFINITIONS.ffmpeg.envKeys)
-  const ffprobePath = resolveTool(TOOL_DEFINITIONS.ffprobe.names, TOOL_DEFINITIONS.ffprobe.envKeys)
-  const ytDlpPath = resolveTool(TOOL_DEFINITIONS.ytDlp.names, TOOL_DEFINITIONS.ytDlp.envKeys)
+  const pathDirectories = await getPathDirectories()
+  const [ffmpegPath, ffprobePath, ytDlpPath] = await Promise.all([
+    resolveTool(TOOL_DEFINITIONS.ffmpeg.names, TOOL_DEFINITIONS.ffmpeg.envKeys, pathDirectories),
+    resolveTool(TOOL_DEFINITIONS.ffprobe.names, TOOL_DEFINITIONS.ffprobe.envKeys, pathDirectories),
+    resolveTool(TOOL_DEFINITIONS.ytDlp.names, TOOL_DEFINITIONS.ytDlp.envKeys, pathDirectories),
+  ])
   const diagnostics: string[] = []
 
-  if (!ffmpegPath) diagnostics.push("未找到 ffmpeg，请设置 FFMPEG_PATH 或将其加入 PATH")
-  if (!ffprobePath) diagnostics.push("未找到 ffprobe，请设置 FFPROBE_PATH 或将其加入 PATH")
-  if (!ytDlpPath) diagnostics.push("未找到 yt-dlp，请设置 YTDLP_PATH 或将其加入 PATH")
+  const lookupHint = "请确认它已安装、位于 PATH 中，或通过对应环境变量指定路径"
+  if (!ffmpegPath) diagnostics.push(`未找到 ffmpeg，${lookupHint}`)
+  if (!ffprobePath) diagnostics.push(`未找到 ffprobe，${lookupHint}`)
+  if (!ytDlpPath) diagnostics.push(`未找到 yt-dlp，${lookupHint}`)
 
   return {
     platform,
@@ -130,6 +277,7 @@ export function resolveToolchain(): Toolchain {
     ytDlpPath,
     ready: diagnostics.length === 0,
     diagnostics,
+    searchedDirectories: [...new Set([...getConfiguredDirectories(), ...pathDirectories])],
   }
 }
 
@@ -147,21 +295,41 @@ export function toolchainEnvironment(toolchain: Toolchain): Record<string, strin
     if (value !== undefined) environment[key] = value
   }
   environment[pathKey] = [...uniqueDirectories, currentPath].filter(Boolean).join(delimiter)
+  // Keep yt-dlp's Python output deterministic when it is launched through a
+  // Windows pipe. decodeToolText still accepts GB18030 for older builds that
+  // ignore these variables.
+  environment.PYTHONUTF8 = "1"
+  environment.PYTHONIOENCODING = "utf-8"
   return environment
 }
 
 /** Reveal a completed file in the host operating system's file manager. */
-export function revealInFileManager(filePath: string): void {
-  const absolutePath = resolve(filePath)
+export function revealInFileManager(filePath: string): boolean {
+  const absolutePath = normalizeFilePath(filePath)
+  if (!isExecutableFile(absolutePath)) return false
+
   try {
     if (process.platform === "darwin") {
       Bun.spawn(["open", "-R", absolutePath], { stdin: "ignore", stdout: "ignore", stderr: "ignore" })
     } else if (process.platform === "win32") {
-      Bun.spawn(["explorer.exe", `/select,${absolutePath}`], { stdin: "ignore", stdout: "ignore", stderr: "ignore" })
+      // Pass the selector directly to Explorer. Verbatim arguments prevent
+      // Bun from adding another layer of Windows slash/quote escaping, so the
+      // command line remains /select,"C:\\directory\\file".
+      const windowsDirectory = process.env.WINDIR ?? process.env.SystemRoot ?? "C:\\Windows"
+      const explorerPath = join(windowsDirectory, "explorer.exe")
+      const selector = `/select,"${absolutePath}"`
+      Bun.spawn([explorerPath, selector], {
+        stdin: "ignore",
+        stdout: "ignore",
+        stderr: "ignore",
+        windowsVerbatimArguments: true,
+      })
     } else {
       Bun.spawn(["xdg-open", dirname(absolutePath)], { stdin: "ignore", stdout: "ignore", stderr: "ignore" })
     }
+    return true
   } catch {
     // A missing file manager should not crash the TUI.
+    return false
   }
 }

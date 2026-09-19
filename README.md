@@ -15,7 +15,7 @@
 - 下载中显示进度、速度和预计剩余时间。
 - 已完成任务支持在系统文件管理器中定位输出文件。
 - 连续下载同一个链接时自动生成唯一文件名，避免重名冲突。
-- 启动时自动识别操作系统以及 `ffmpeg`、`ffprobe`、`yt-dlp` 的实际路径。
+- 启动时自动检查 `PATH` 目录中的 `ffmpeg`、`ffprobe`、`yt-dlp`。
 - 支持通过 `.pre` 文件加载 yt-dlp 预设参数。
 - 支持底部控制台日志和可滚动设置界面。
 - 使用自定义 OpenTUI 组件实现下拉框、标签页、侧边栏、进度条和控制台。
@@ -27,15 +27,15 @@
 - `ffmpeg`
 - `ffprobe`
 
-程序启动时会从系统 `PATH` 中查找三个外部工具，也支持通过环境变量指定位置：
+程序启动时会先检查对应环境变量指定的路径，再从系统 `PATH` 中逐个目录查找三个外部工具。Windows 会自动尝试 `.exe`、`.cmd` 和 `.bat` 后缀。
 
-```bash
-export FFMPEG_PATH="/path/to/ffmpeg"
-export FFPROBE_PATH="/path/to/ffprobe"
-export YTDLP_PATH="/path/to/yt-dlp"
+也可以将三个二进制文件所在目录加入 `PATH`，例如：
+
+```powershell
+$env:Path = "C:\path\to\tools;$env:Path"
 ```
 
-Windows 支持从环境变量和 `PATH` 查找 `.exe`、`.cmd`、`.bat` 文件。
+启动时如果任意一个工具缺失，顶部标签栏最右侧会显示“刷新工具”按钮；修改 PATH 或对应环境变量后点击该按钮即可重新检查。
 
 ## 安装依赖
 
@@ -145,20 +145,20 @@ yt-dlp-downloader/
 以下链接保留自项目早期测试命令，可用于验证视频、格式和字幕下载功能：
 
 ```bash
-yt-dlp "https://www.bilibili.com/video/BV1yq4k6wEU7/?vd_source=03e8776c2b36f6f8873e0a65ad1e4633" \
+yt-dlp https://www.bilibili.com/video/BV1yq4k6wEU7/?vd_source=03e8776c2b36f6f8873e0a65ad1e4633 \
   --merge-output-format mp4 \
   --remux-video mp4 \
   -S "vcodec:h264,lang,quality,res,fps,height:720,hdr:12,acodec:aac"
 
-yt-dlp "https://www.bilibili.com/video/BV1yq4k6wEU7/?vd_source=03e8776c2b36f6f8873e0a65ad1e4633" \
+yt-dlp https://www.bilibili.com/video/BV1yq4k6wEU7/?vd_source=03e8776c2b36f6f8873e0a65ad1e4633 \
   -t mp4
 
-yt-dlp "https://www.bilibili.com/video/BV175hzzNESY/?spm_id_from=333.337.search-card.all.click&vd_source=03e8776c2b36f6f8873e0a65ad1e4633" \
+yt-dlp https://www.bilibili.com/video/BV175hzzNESY/?spm_id_from=333.337.search-card.all.click\&vd_source=03e8776c2b36f6f8873e0a65ad1e4633 \
   -t mp4 \
   --embed-chapters
 
 yt-dlp --cookies-from-browser chrome \
-  "https://www.bilibili.com/video/BV175hzzNESY/?spm_id_from=333.337.search-card.all.click&vd_source=03e8776c2b36f6f8873e0a65ad1e4633" \
+  https://www.bilibili.com/video/BV175hzzNESY/?spm_id_from=333.337.search-card.all.click\&vd_source=03e8776c2b36f6f8873e0a65ad1e4633 \
   -t mp4 \
   --write-auto-subs \
   --sub-langs en \
