@@ -6,6 +6,7 @@ import { Configs } from "./handles/Configs"
 import { OutputConfig } from "./handles/OutputConfig"
 import { YtTask } from "./handles/YtTask"
 import { writeAppConsole } from "./components"
+import { toolchainEnvironment, type Toolchain } from "./runtime/Toolchain"
 
 /** 下载任务的实时进度回调 */
 export interface DownloadProgress {
@@ -38,9 +39,6 @@ export interface DownloadOptions {
 
 
 const CONFIG_PATH = resolve("yt-dlp-downloader/config.json")
-const YTDLP = `/usr/local/bin/yt-dlp`
-// const YTDLP = `${BIN_DIR}/yt-dlp`
-
 /** 把 ~ 展开为用户主目录 */
 function expandHome(p: string): string {
   if (p === "~") return process.env.HOME ?? p
@@ -119,7 +117,7 @@ function stripFlagWithValue(args: string[], flags: string[]): string[] {
 }
 
 /** 构建传给 yt-dlp 的完整参数列表 */
-export function buildArgs(opts: DownloadOptions, titleFile: string): string[] {
+export function buildArgs(opts: DownloadOptions, titleFile: string, toolchain?: Toolchain): string[] {
   let configArgs = loadConfigArgs()
   const outDir = expandHome(opts.outDir || "~/Downloads")
   const outTemplate = `${outDir}/%(title)s.%(ext)s`
@@ -146,6 +144,7 @@ export function buildArgs(opts: DownloadOptions, titleFile: string): string[] {
       "before_dl:%(title)s",
       titleFile,
       ...formatArgs(opts.format),
+      ...(toolchain?.ffmpegPath ? ["--ffmpeg-location", toolchain.ffmpegPath] : []),
       ...(opts.presetPath ? ["--config-locations", opts.presetPath] : []),
       ...opts.extraArgs,
     )
@@ -207,19 +206,27 @@ function logToConsole(line: string) {
 }
 
 /** 启动一个下载任务，返回可用于终止的 kill 函数 */
-export function startDownload(opts: DownloadOptions, cb: DownloadCallbacks): () => void {
+export function startDownload(opts: DownloadOptions, cb: DownloadCallbacks, toolchain: Toolchain): () => void {
+  if (!toolchain.ready || !toolchain.ytDlpPath) {
+    const message = toolchain.diagnostics.join("；") || "外部工具链未准备完成"
+    cb.onError(message)
+    writeAppConsole("error", `[启动失败] ${message}`)
+    return () => {}
+  }
+
   const titleFile = join(
     tmpdir(),
     `ytdlp-title-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`
   )
-  const args = buildArgs(opts, titleFile)
+  const args = buildArgs(opts, titleFile, toolchain)
 
   console.log(`▶ 开始下载: ${opts.url}`)
 
-  const proc = Bun.spawn([YTDLP, ...args], {
+  const proc = Bun.spawn([toolchain.ytDlpPath, ...args], {
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
+    env: toolchainEnvironment(toolchain),
   })
 
   let titleSet = false

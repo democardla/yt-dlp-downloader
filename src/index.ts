@@ -9,6 +9,7 @@ import { createDownloaderFeature } from "./DownloaderUi"
 import { createSettingsFeature } from "./SettingsUi"
 import { ConsolePanelRenderable, TabBarRenderable, writeAppConsole } from "./components"
 import { access, mkdir } from "node:fs/promises";
+import { resolveToolchain } from "./runtime/Toolchain"
 
 import { 
   Configs,
@@ -36,6 +37,9 @@ try {
     console.log("目录不存在，已创建");
 }
 
+// Resolve the host and all external binaries before constructing download UI.
+const toolchain = resolveToolchain()
+
 // ---------------------------------------------------------------------------
 // 渲染器
 // ---------------------------------------------------------------------------
@@ -57,7 +61,7 @@ interface Feature {
 }
 
 // 下载器（真实功能）
-const downloader: Feature = createDownloaderFeature(renderer)
+const downloader: Feature = createDownloaderFeature(renderer, toolchain)
 
 // 设置页（真实功能）
 const settings: Feature = createSettingsFeature(renderer)
@@ -68,6 +72,24 @@ try {
   appConfigs = new Configs()
 }
 const consolePanel = new ConsolePanelRenderable(renderer, { enabled: appConfigs.console.enabled })
+
+const toolchainHeader = `系统：${toolchain.operatingSystem} (${toolchain.platform})`
+console.log(toolchainHeader)
+writeAppConsole("log", toolchainHeader)
+for (const [name, path] of [
+  ["ffmpeg", toolchain.ffmpegPath],
+  ["ffprobe", toolchain.ffprobePath],
+  ["yt-dlp", toolchain.ytDlpPath],
+] as const) {
+  const message = `${name}: ${path ?? "未找到"}`
+  console.log(message)
+  writeAppConsole(path ? "log" : "error", message)
+}
+if (!toolchain.ready) {
+  const message = `工具链未准备完成，下载功能暂不可用：${toolchain.diagnostics.join("；")}`
+  console.error(message)
+  writeAppConsole("error", message)
+}
 
 // 关于（占位）
 function createPlaceholderFeature(id: string, title: string, body: string): Feature {

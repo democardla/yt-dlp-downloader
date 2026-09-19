@@ -1,0 +1,44 @@
+{
+  "name": "默认配置",
+  "description": "yt-dlp 下载器默认配置",
+  "downloadNetwork": {
+    "concurrent_fragments": null,
+    "limit_rate": null,
+    "throttled_rate": null,
+    "retries": null,
+    "fragment_retries": null,
+    "file_access_retries": null,
+    "buffer_size": null,
+    "http_chunk_size": null
+  },
+  "output": {
+    "path": "~/Downloads",
+    "temp_path": null,
+    "output": null,
+    "output_na_placeholder": null,
+    "restrict_filenames": false,
+    "windows_filenames": false,
+    "trim_filenames": null
+  },
+  "subtitle": {
+    "only_subs": false,
+    "write_subs": false,
+    "write_auto_subs": false,
+    "list_subs": false,
+    "sub_format": "vtt",
+    "sub_langs": "en",
+    "embed_subs": false
+  },
+  "videoFormat": {
+    "format": null,
+    "format_sort": null,
+    "merge_output_format": null,
+    "video_multistreams": false,
+    "audio_multistreams": false,
+    "prefer_free_formats": false,
+    "check_formats": false
+  },
+  "console": {
+    "enabled": false
+  }
+}

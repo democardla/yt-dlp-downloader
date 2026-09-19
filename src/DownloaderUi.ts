@@ -16,6 +16,7 @@ import {
   type DownloadOptions,
   type DownloadStatus,
 } from "./downloader"
+import type { Toolchain } from "./runtime/Toolchain"
 
 // ---------------------------------------------------------------------------
 // 数据模型
@@ -46,7 +47,7 @@ export interface DownloaderFeature {
 }
 
 /** 创建下载器业务逻辑：构建界面、绑定事件、管理下载列表与状态 */
-export function createDownloaderFeature(renderer: CliRenderer): DownloaderFeature {
+export function createDownloaderFeature(renderer: CliRenderer, toolchain: Toolchain): DownloaderFeature {
   const downloads: DownloadItem[] = []
   let activeTab: 0 | 1 | 2 = 0 // 0 = 下载中, 1 = 已完成, 2 = 未成功
 
@@ -320,7 +321,7 @@ export function createDownloaderFeature(renderer: CliRenderer): DownloaderFeatur
         item.error = msg
         renderList()
       },
-    })
+    }, toolchain)
 
     urlInput.value = ""
     urlInput.focus()
