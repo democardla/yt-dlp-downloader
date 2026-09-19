@@ -12,7 +12,7 @@
     "http_chunk_size": null
   },
   "output": {
-    "path": "~/Downloads",
+    "path": "/Users/democardla/Downloads",
     "temp_path": null,
     "output": null,
     "output_na_placeholder": null,
@@ -39,6 +39,6 @@
     "check_formats": false
   },
   "console": {
-    "enabled": false
+    "enabled": true
   }
 }

@@ -1,5 +1,5 @@
 import { accessSync, constants, statSync } from "node:fs"
-import { delimiter, join, resolve } from "node:path"
+import { delimiter, dirname, join, resolve } from "node:path"
 
 export type HostOperatingSystem = "windows" | "macos" | "linux" | "freebsd" | "other"
 
@@ -11,6 +11,13 @@ export interface Toolchain {
   ytDlpPath: string | null
   ready: boolean
   diagnostics: string[]
+}
+
+export function getDefaultDownloadDirectory(platform: NodeJS.Platform = process.platform): string {
+  const home = platform === "win32"
+    ? process.env.USERPROFILE ?? [process.env.HOMEDRIVE, process.env.HOMEPATH].filter(Boolean).join("\\")
+    : process.env.HOME
+  return home ? join(home, "Downloads") : "Downloads"
 }
 
 const TOOL_DEFINITIONS = {
@@ -141,4 +148,20 @@ export function toolchainEnvironment(toolchain: Toolchain): Record<string, strin
   }
   environment[pathKey] = [...uniqueDirectories, currentPath].filter(Boolean).join(delimiter)
   return environment
+}
+
+/** Reveal a completed file in the host operating system's file manager. */
+export function revealInFileManager(filePath: string): void {
+  const absolutePath = resolve(filePath)
+  try {
+    if (process.platform === "darwin") {
+      Bun.spawn(["open", "-R", absolutePath], { stdin: "ignore", stdout: "ignore", stderr: "ignore" })
+    } else if (process.platform === "win32") {
+      Bun.spawn(["explorer.exe", `/select,${absolutePath}`], { stdin: "ignore", stdout: "ignore", stderr: "ignore" })
+    } else {
+      Bun.spawn(["xdg-open", dirname(absolutePath)], { stdin: "ignore", stdout: "ignore", stderr: "ignore" })
+    }
+  } catch {
+    // A missing file manager should not crash the TUI.
+  }
 }

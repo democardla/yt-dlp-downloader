@@ -5,8 +5,8 @@ import {
   RGBA,
   type Renderable,
 } from "@opentui/core"
-import { createDownloaderFeature } from "./DownloaderUi"
-import { createSettingsFeature } from "./SettingsUi"
+import { createDownloaderFeature } from "./DownloaderUI"
+import { createSettingsFeature } from "./SettingsUI"
 import { ConsolePanelRenderable, TabBarRenderable, writeAppConsole } from "./components"
 import { access, mkdir } from "node:fs/promises";
 import { resolveToolchain } from "./runtime/Toolchain"
@@ -31,10 +31,8 @@ const dir = "yt-dlp-downloader";
 
 try {
     await access(dir);
-    console.log("目录已经存在");
 } catch {
     await mkdir(dir, { recursive: true });
-    console.log("目录不存在，已创建");
 }
 
 // Resolve the host and all external binaries before constructing download UI.
@@ -74,7 +72,6 @@ try {
 const consolePanel = new ConsolePanelRenderable(renderer, { enabled: appConfigs.console.enabled })
 
 const toolchainHeader = `系统：${toolchain.operatingSystem} (${toolchain.platform})`
-console.log(toolchainHeader)
 writeAppConsole("log", toolchainHeader)
 for (const [name, path] of [
   ["ffmpeg", toolchain.ffmpegPath],
@@ -82,12 +79,10 @@ for (const [name, path] of [
   ["yt-dlp", toolchain.ytDlpPath],
 ] as const) {
   const message = `${name}: ${path ?? "未找到"}`
-  console.log(message)
   writeAppConsole(path ? "log" : "error", message)
 }
 if (!toolchain.ready) {
   const message = `工具链未准备完成，下载功能暂不可用：${toolchain.diagnostics.join("；")}`
-  console.error(message)
   writeAppConsole("error", message)
 }
 
@@ -199,7 +194,6 @@ renderer.keyInput.on("keypress", (key: { name: string; defaultPrevented?: boolea
 // 启动
 // ---------------------------------------------------------------------------
 
-console.log("yt-dlp 下载器已就绪，输入视频链接后回车即可开始下载")
 writeAppConsole("log", "yt-dlp 下载器已就绪，输入视频链接后回车即可开始下载")
 
 // 初始选中“下载器”并聚焦 URL 输入

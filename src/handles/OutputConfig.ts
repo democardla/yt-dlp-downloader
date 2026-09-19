@@ -1,9 +1,10 @@
 import { Expose } from 'class-transformer';
+import { getDefaultDownloadDirectory } from '../runtime/Toolchain';
 
 export class OutputConfig {
     // 下载路径
     @Expose()
-    public path: string | null = "~/Downloads";
+    public path: string | null = getDefaultDownloadDirectory();
 
     // 临时文件路径
     @Expose()

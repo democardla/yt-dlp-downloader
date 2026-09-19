@@ -4,6 +4,10 @@ export interface TabBarOption<T = number> {
   name: string
   description?: string
   value?: T
+  badge?: {
+    value: number | string
+    shown?: boolean
+  }
 }
 
 /** Compact, mouse-friendly tab bar for the application's top-level views. */
@@ -30,7 +34,18 @@ export class TabBarRenderable<T = number> extends Renderable {
     this.tabs.length = 0
     for (const child of this.getChildren()) this.remove(child.id)
     this.options.forEach((option, index) => {
-      const tab = new TextRenderable(ctx, { content: ` ${option.name} `, height: 1 })
+      const badge = option.badge && option.badge.shown !== false
+        ? `(${option.badge.value})`
+        : ""
+      const tab = new TextRenderable(ctx, {
+        content: ` ${option.name}${badge} `,
+        height: 1,
+        // Tab labels are mouse targets, not selectable text. Without this,
+        // dragging across a tab starts OpenTUI's text-selection behaviour.
+        selectable: false,
+        wrapMode: "none",
+        truncate: true,
+      })
       tab.onMouseDown = () => this.setSelectedIndex(index, true)
       this.tabs.push(tab)
       this.add(tab)

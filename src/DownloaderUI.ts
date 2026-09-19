@@ -1,5 +1,6 @@
 import {
   BoxRenderable,
+  ASCIIFontRenderable,
   InputRenderable,
   InputRenderableEvents,
   ScrollBoxRenderable,
@@ -16,7 +17,8 @@ import {
   type DownloadOptions,
   type DownloadStatus,
 } from "./downloader"
-import type { Toolchain } from "./runtime/Toolchain"
+import { getDefaultDownloadDirectory, revealInFileManager, type Toolchain } from "./runtime/Toolchain"
+import { Configs } from "./handles/Configs"
 
 // ---------------------------------------------------------------------------
 // 数据模型
@@ -31,11 +33,11 @@ interface DownloadItem {
   speed: string
   eta: string
   error?: string
+  outputPath?: string
   kill?: () => void
 }
 
 const ACCENT = RGBA.fromHex("#7FC7FF")
-const MUTED = RGBA.fromHex("#6b7280")
 
 export interface DownloaderFeature {
   /** 下载器根布局（左：配置区，右：下载列表） */
@@ -73,7 +75,14 @@ export function createDownloaderFeature(renderer: CliRenderer, toolchain: Toolch
 
   const outDirInput = new InputRenderable(renderer, {
     id: "out-dir",
-    value: "~/Downloads",
+    value: (() => {
+      try {
+        const configured = Configs.loadFromFileSync(resolve("yt-dlp-downloader/config.json")).output.path
+        return configured && configured !== "~/Downloads" ? configured : getDefaultDownloadDirectory(toolchain.platform)
+      } catch {
+        return getDefaultDownloadDirectory(toolchain.platform)
+      }
+    })(),
     placeholder: "下载文件保存目录",
   })
 
@@ -142,12 +151,6 @@ export function createDownloaderFeature(renderer: CliRenderer, toolchain: Toolch
   configScroll.add(presetSelect)
   configScroll.add(new TextRenderable(renderer, { content: "附加参数", fg: ACCENT }))
   configScroll.add(extraArgsInput)
-  configScroll.add(
-    new TextRenderable(renderer, {
-      content: "回车：开始下载   Tab：切换焦点   Ctrl+C：退出",
-      fg: MUTED,
-    })
-  )
   leftPanel.add(configScroll)
 
   // -------------------------------------------------------------------------
@@ -157,19 +160,14 @@ export function createDownloaderFeature(renderer: CliRenderer, toolchain: Toolch
   const innerTabs = new TabBarRenderable<number>(renderer, {
     id: "tabs",
     options: [
-      { name: " 下载中 ", description: "0", value: 0 },
-      { name: " 已完成 ", description: "0", value: 1 },
-      { name: " 未成功 ", description: "0", value: 2 },
+      { name: " 下载中 ", value: 0, badge: { value: 0, shown: true } },
+      { name: " 已完成 ", value: 1, badge: { value: 0, shown: true } },
+      { name: " 未成功 ", value: 2, badge: { value: 0, shown: true } },
     ],
     onChange: (_option, index) => {
       activeTab = index as 0 | 1 | 2
       renderList()
     },
-  })
-
-  const listContent = new TextRenderable(renderer, {
-    id: "list-content",
-    content: "暂无下载任务",
   })
 
   const listContainer = new BoxRenderable(renderer, {
@@ -184,7 +182,6 @@ export function createDownloaderFeature(renderer: CliRenderer, toolchain: Toolch
     scrollX: false,
     scrollbarOptions: { showArrows: false },
   })
-  listScroll.add(listContent)
   listContainer.add(listScroll)
 
   const rightPanel = new BoxRenderable(renderer, {
@@ -221,16 +218,30 @@ export function createDownloaderFeature(renderer: CliRenderer, toolchain: Toolch
     const doneCount = downloads.filter((d) => d.status === "done").length
     const errorCount = downloads.filter((d) => d.status === "error").length
     innerTabs.setOptions([
-      { name: " 下载中 ", description: String(downloadingCount), value: 0 },
-      { name: " 已完成 ", description: String(doneCount), value: 1 },
-      { name: " 未成功 ", description: String(errorCount), value: 2 },
+      { name: " 下载中 ", value: 0, badge: { value: downloadingCount, shown: true } },
+      { name: " 已完成 ", value: 1, badge: { value: doneCount, shown: true } },
+      { name: " 未成功 ", value: 2, badge: { value: errorCount, shown: true } },
     ])
 
     for (const child of listScroll.getChildren()) listScroll.remove(child.id)
 
     if (items.length === 0) {
-      listScroll.add(listContent)
-      listContent.content = activeTab === 0 ? "暂无下载中的任务" : activeTab === 1 ? "暂无已完成的任务" : "暂无失败的任务"
+      const emptyState = new BoxRenderable(renderer, {
+        id: "download-empty-state",
+        width: "100%",
+        height: "100%",
+        flexDirection: "column",
+        justifyContent: "center",
+        alignItems: "center",
+      })
+      const emptyLabel = activeTab === 0 ? "DLD" : activeTab === 1 ? "FIN" : "FAIL"
+      emptyState.add(new ASCIIFontRenderable(renderer, {
+        text: emptyLabel,
+        font: "tiny",
+        color: RGBA.fromHex("#FFFFFF"),
+        selectable: false,
+      }))
+      listScroll.add(emptyState)
       return
     }
 
@@ -240,23 +251,49 @@ export function createDownloaderFeature(renderer: CliRenderer, toolchain: Toolch
 
       const row = new BoxRenderable(renderer, {
         id: `download-row-${item.id}`,
+        width: "100%",
+        height: 1,
         flexDirection: "column",
+        alignItems: "center",
       })
-      row.add(new TextRenderable(renderer, {
+      const titleText = new TextRenderable(renderer, {
         content: `${statusIcon} ${item.title || item.url}`,
-      }))
-
+        flexGrow: 1,
+        wrapMode: "none",
+        truncate: true,
+        selectable: false,
+      })
+      if (item.status === "done" && item.outputPath) {
+        titleText.onMouseDown = () => revealInFileManager(item.outputPath!)
+        row.onMouseDown = () => revealInFileManager(item.outputPath!)
+      }
+      row.add(titleText)
       if (item.status === "downloading") {
+        row.flexDirection = "row"
+        row.justifyContent = "space-between"
         row.add(new ProgressBarRenderable(renderer, {
           width: 20,
           percent: item.percent,
           label: `${item.speed || ""} ETA ${item.eta || "--"}`,
+          truncate: true,
+          selectable: false,
         }))
       } else {
         const status = item.status === "done"
-          ? "[完成]"
+          ? item.outputPath ? "[单击查看]" : "[完成]"
           : `[失败] ${item.error || ""}`
-        row.add(new TextRenderable(renderer, { content: status }))
+        const statusText = new TextRenderable(renderer, {
+          content: status,
+          wrapMode: "none",
+          truncate: true,
+          selectable: false,
+        })
+        if (item.status === "done" && item.outputPath) {
+          statusText.onMouseDown = () => revealInFileManager(item.outputPath!)
+        }
+        row.flexDirection = "row"
+        row.justifyContent = "space-between"
+        row.add(statusText)
       }
       listScroll.add(row)
     }
@@ -271,7 +308,7 @@ export function createDownloaderFeature(renderer: CliRenderer, toolchain: Toolch
     if (!url) return
 
     const selectedFormat = formatSelect.getSelectedOption()?.name
-    const formatOpt = selectedFormat === "mp3" ? "mp3" : selectedFormat === "简字幕" ? "subtitle" : "mp4"
+    const formatOpt = selectedFormat === "mp3" ? "mp3" : selectedFormat === "字幕" ? "subtitle" : "mp4"
     const outDir = outDirInput.value.trim() || "~/Downloads"
     const extraRaw = extraArgsInput.value.trim()
     const extraArgs = extraRaw ? extraRaw.split(/\s+/).filter(Boolean) : []
@@ -311,9 +348,14 @@ export function createDownloaderFeature(renderer: CliRenderer, toolchain: Toolch
         item.eta = p.eta
         renderList()
       },
-      onDone: () => {
+      onOutputPath: (path) => {
+        item.outputPath = path
+        renderList()
+      },
+      onDone: ({ outputPath }) => {
         item.status = "done"
         item.percent = 100
+        if (outputPath) item.outputPath = outputPath
         renderList()
       },
       onError: (msg) => {
@@ -338,6 +380,10 @@ export function createDownloaderFeature(renderer: CliRenderer, toolchain: Toolch
   extraArgsInput.on(InputRenderableEvents.ENTER, () => {
     beginDownload()
   })
+
+  // The list starts empty. Render the initial tab immediately so its ASCII
+  // empty-state marker is visible before the user switches tabs.
+  renderList()
 
   const focusables: Renderable[] = [
     urlInput,

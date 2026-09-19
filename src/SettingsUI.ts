@@ -3,6 +3,7 @@ import { existsSync } from "node:fs"
 import { resolve } from "node:path"
 import { setAppConsoleEnabled, SidebarNavRenderable, StatusSelectRenderable } from "./components"
 import { Configs, formatSortToString, type DownloadNetworkConfig, type FormatSort, type OutputConfig, type SubtitleConfig, type VideoFormatConfig } from "./handles"
+import { getDefaultDownloadDirectory } from "./runtime/Toolchain"
 
 // Use cwd so both Bun source mode and compiled single-file mode can write it.
 const CONFIG_PATH = resolve("yt-dlp-downloader/config.json")
@@ -76,11 +77,26 @@ function parseFormatSort(value: string | null): Partial<FormatSort> {
 
 function loadConfigs(): Configs {
   if (!existsSync(CONFIG_PATH)) {
-    const configs = new Configs(); configs.saveToFileSync(CONFIG_PATH); return configs
+    const configs = new Configs()
+    configs.output.path = getDefaultDownloadDirectory()
+    configs.saveToFileSync(CONFIG_PATH)
+    return configs
   }
-  try { return Configs.loadFromFileSync(CONFIG_PATH) } catch (error) {
+  try {
+    const configs = Configs.loadFromFileSync(CONFIG_PATH)
+    // Migrate the old platform-neutral default without touching a user's
+    // explicitly chosen directory.
+    if (!configs.output.path || configs.output.path === "~/Downloads") {
+      configs.output.path = getDefaultDownloadDirectory()
+      configs.saveToFileSync(CONFIG_PATH)
+    }
+    return configs
+  } catch (error) {
     console.error(`配置文件读取失败，将使用默认配置: ${String(error)}`)
-    const configs = new Configs(); configs.saveToFileSync(CONFIG_PATH); return configs
+    const configs = new Configs()
+    configs.output.path = getDefaultDownloadDirectory()
+    configs.saveToFileSync(CONFIG_PATH)
+    return configs
   }
 }
 

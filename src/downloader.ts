@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs"
+import { randomUUID } from "node:crypto"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { resolve } from "node:path"
@@ -6,7 +7,7 @@ import { Configs } from "./handles/Configs"
 import { OutputConfig } from "./handles/OutputConfig"
 import { YtTask } from "./handles/YtTask"
 import { writeAppConsole } from "./components"
-import { toolchainEnvironment, type Toolchain } from "./runtime/Toolchain"
+import { getDefaultDownloadDirectory, toolchainEnvironment, type Toolchain } from "./runtime/Toolchain"
 
 /** 下载任务的实时进度回调 */
 export interface DownloadProgress {
@@ -20,6 +21,7 @@ export type DownloadStatus = "downloading" | "done" | "error"
 export interface DownloadCallbacks {
   onTitle: (title: string) => void
   onProgress: (p: DownloadProgress) => void
+  onOutputPath: (path: string) => void
   onDone: (info: { outputPath?: string }) => void
   onError: (message: string) => void
 }
@@ -120,7 +122,11 @@ function stripFlagWithValue(args: string[], flags: string[]): string[] {
 export function buildArgs(opts: DownloadOptions, titleFile: string, toolchain?: Toolchain): string[] {
   let configArgs = loadConfigArgs()
   const outDir = expandHome(opts.outDir || "~/Downloads")
-  const outTemplate = `${outDir}/%(title)s.%(ext)s`
+  // yt-dlp will otherwise target the same title/ext on repeated downloads.
+  // Generate the suffix in the app so even two downloads started in one
+  // second cannot collide.
+  const taskSuffix = randomUUID().replaceAll("-", "").slice(0, 12)
+  const outTemplate = `${outDir}/%(title)s [${taskSuffix}].%(ext)s`
 
   if (opts.format === "mp3") {
     // 移除 config 里的视频预设（-t mp4 → --merge-output-format mp4 --remux-video mp4），
@@ -146,6 +152,12 @@ export function buildArgs(opts: DownloadOptions, titleFile: string, toolchain?: 
       ...formatArgs(opts.format),
       ...(toolchain?.ffmpegPath ? ["--ffmpeg-location", toolchain.ffmpegPath] : []),
       ...(opts.presetPath ? ["--config-locations", opts.presetPath] : []),
+      "--print",
+      "after_move:FILEPATH %(filepath)s",
+      // --print implies quiet/simulate in yt-dlp. Explicitly restore the
+      // normal download and progress behaviour after the diagnostic print.
+      "--no-quiet",
+      "--no-simulate",
       ...opts.extraArgs,
     )
 
@@ -230,6 +242,7 @@ export function startDownload(opts: DownloadOptions, cb: DownloadCallbacks, tool
   })
 
   let titleSet = false
+  let outputPath: string | undefined
 
   // 标题由 --print-to-file before_dl 写入临时文件，这里惰性读取
   const readTitle = () => {
@@ -249,7 +262,10 @@ export function startDownload(opts: DownloadOptions, cb: DownloadCallbacks, tool
   void readLines(proc.stdout, (line) => {
     readTitle()
     const progress = parseProgressLine(line)
-    if (progress) {
+    if (line.startsWith("FILEPATH ")) {
+      outputPath = line.slice("FILEPATH ".length).trim()
+      if (outputPath) cb.onOutputPath(outputPath)
+    } else if (progress) {
       cb.onProgress(progress)
     } else {
       logToConsole(line)
@@ -266,7 +282,7 @@ export function startDownload(opts: DownloadOptions, cb: DownloadCallbacks, tool
     readTitle()
     if (code === 0) {
       console.log("✔ 下载完成")
-      cb.onDone({})
+      cb.onDone({ outputPath })
     } else {
       console.error(`✘ 下载失败，进程退出码 ${code}`)
       cb.onError(`进程退出码 ${code}`)
