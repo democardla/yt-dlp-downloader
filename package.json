@@ -1,0 +1,27 @@
+{
+  "name": "yt-dlp-downloader",
+  "module": "src/index.tsx",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "build": "bun build --compile ./src/index.ts --outfile ./dist/myapp"
+  },
+  "imports": {
+    "@components": "./src/components/index.ts",
+    "@components/*": "./src/components/*",
+    "@handles": "./src/handles/index.ts",
+    "@handles/*": "./src/handles/*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@opentui/core": "^0.3.2",
+    "class-transformer": "^0.5.1",
+    "reflect-metadata": "^0.2.2"
+  }
+}

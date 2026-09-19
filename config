@@ -1,0 +1,40 @@
+# 通用设置
+-o ~/Desktop/%(title)s.%(ext)s
+-t mp4
+--newline
+
+; --write-info-json
+
+; # 自动转换音频（如仅下载音频时）
+; --audio-quality 0
+
+; # 下载字幕（如有）
+; --write-auto-sub
+; --sub-lang zh,en
+
+; # 跳过重复内容
+; --download-archive ~/.yt-dlp-archive.txt
+
+# 最高画质优先（可选）
+; -f "bv*+ba/b"
+
+# 错误自动重试
+; --fragment-retries 10
+
+# 日志简洁
+; --no-warnings
+; --quiet
+--embed-subs
+
+--write-auto-subs
+
+--write-auto-subs
+
+--write-auto-subs
+
+
+-t mp3
+
+-t mp3
+
+-t mp4
