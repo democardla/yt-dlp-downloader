@@ -69,6 +69,14 @@ function isExecutableFile(filePath: string): boolean {
   }
 }
 
+function isRegularFile(filePath: string): boolean {
+  try {
+    return statSync(filePath).isFile()
+  } catch {
+    return false
+  }
+}
+
 function candidateNames(names: readonly string[]): string[] {
   if (process.platform !== "win32") return [...names]
   const extensions = [".exe", ".cmd", ".bat", ""]
@@ -306,12 +314,30 @@ export function toolchainEnvironment(toolchain: Toolchain): Record<string, strin
 /** Reveal a completed file in the host operating system's file manager. */
 export function revealInFileManager(filePath: string): boolean {
   const absolutePath = normalizeFilePath(filePath)
+
+  // macOS media files are regular files, not executable files. Keep this
+  // branch separate because Finder has its own native reveal command and the
+  // Unix execute-bit check used by tool binaries is not appropriate here.
+  if (process.platform === "darwin") {
+    if (!isRegularFile(absolutePath)) return false
+
+    try {
+      Bun.spawn(["/usr/bin/open", "-R", absolutePath], {
+        stdin: "ignore",
+        stdout: "ignore",
+        stderr: "ignore",
+      })
+      return true
+    } catch {
+      // Finder/open should not be allowed to crash the TUI.
+      return false
+    }
+  }
+
   if (!isExecutableFile(absolutePath)) return false
 
   try {
-    if (process.platform === "darwin") {
-      Bun.spawn(["open", "-R", absolutePath], { stdin: "ignore", stdout: "ignore", stderr: "ignore" })
-    } else if (process.platform === "win32") {
+    if (process.platform === "win32") {
       // Pass the selector directly to Explorer. Verbatim arguments prevent
       // Bun from adding another layer of Windows slash/quote escaping, so the
       // command line remains /select,"C:\\directory\\file".
