@@ -58,15 +58,15 @@ export class SubtitleSelectionModalRenderable extends BoxRenderable {
       // smaller content area and would therefore be clipped when it was open.
       width: "100%",
       maxWidth: 90,
-      height: "100%",
-      maxHeight: 24,
+      height: "auto",
+      maxHeight: "100%",
       border: true,
       borderStyle: "rounded",
       borderColor: RGBA.fromHex("#7FC7FF"),
       backgroundColor: RGBA.fromHex("#111827"),
       flexDirection: "column",
       padding: 1,
-      gap: 1,
+      gap: 0,
       focusable: true,
     })
     panel.add(new TextRenderable(ctx, {
@@ -74,16 +74,11 @@ export class SubtitleSelectionModalRenderable extends BoxRenderable {
       fg: RGBA.fromHex("#7FC7FF"),
       selectable: false,
     }))
-    panel.add(new TextRenderable(ctx, {
-      content: "空格切换，方向键移动；也可以直接点击选项",
-      fg: RGBA.fromHex("#9CA3AF"),
-      selectable: false,
-    }))
-
     const list = new ScrollBoxRenderable(ctx, {
       id: "subtitle-selection-scroll",
+      height: Math.min(12, Math.max(1, tracks.length)),
       minHeight: 1,
-      flexGrow: 1,
+      flexShrink: 1,
       scrollY: true,
       scrollX: false,
       scrollbarOptions: { showArrows: false },

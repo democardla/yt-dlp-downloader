@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync } from "node:fs"
+import { mkdirSync, readFileSync, statSync } from "node:fs"
 import { randomUUID } from "node:crypto"
 import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -35,7 +35,7 @@ export interface DownloadCallbacks {
   onTitle: (title: string) => void
   onProgress: (p: DownloadProgress) => void
   onOutputPath: (path: string) => void
-  onDone: (info: { outputPath?: string }) => void
+  onDone: (info: { outputPath: string; outputPaths: string[] }) => void
   onError: (message: string) => void
 }
 
@@ -328,10 +328,28 @@ function parseProgressLine(line: string): DownloadProgress | null {
   }
 }
 
-function parseOutputPathLine(line: string): string | null {
-  if (!line.startsWith("FILEPATH ")) return null
-  const path = normalizeFilePath(line.slice("FILEPATH ".length))
+export function parseOutputPathLine(line: string): string | null {
+  let rawPath: string | null = null
+  if (line.startsWith("FILEPATH ")) {
+    rawPath = line.slice("FILEPATH ".length)
+  } else {
+    // Subtitle-only downloads skip the main media file and therefore never
+    // reach the after_move print stage. yt-dlp reports each actual subtitle
+    // destination through this stable informational line instead.
+    const subtitleMatch = line.match(/^\[info\]\s+Writing video subtitles to:\s*(.+)$/)
+    if (subtitleMatch) rawPath = subtitleMatch[1] ?? null
+  }
+  if (!rawPath) return null
+  const path = normalizeFilePath(rawPath)
   return path || null
+}
+
+function isExistingFile(filePath: string): boolean {
+  try {
+    return statSync(filePath).isFile()
+  } catch {
+    return false
+  }
 }
 
 const utf8Decoder = new TextDecoder("utf-8", { fatal: true })
@@ -418,7 +436,7 @@ export function startDownload(opts: DownloadOptions, cb: DownloadCallbacks, tool
   })
 
   let titleSet = false
-  let outputPath: string | undefined
+  const outputPaths = new Set<string>()
   let cancelled = false
   let temporaryFilesCleaned = false
 
@@ -451,8 +469,10 @@ export function startDownload(opts: DownloadOptions, cb: DownloadCallbacks, tool
     readTitle()
     const parsedOutputPath = parseOutputPathLine(line)
     if (parsedOutputPath) {
-      outputPath = parsedOutputPath
-      cb.onOutputPath(parsedOutputPath)
+      if (!outputPaths.has(parsedOutputPath)) {
+        outputPaths.add(parsedOutputPath)
+        cb.onOutputPath(parsedOutputPath)
+      }
       return
     }
 
@@ -482,8 +502,18 @@ export function startDownload(opts: DownloadOptions, cb: DownloadCallbacks, tool
     readTitle()
     await cleanupTemporaryFiles()
     if (code === 0) {
+      const completedOutputPaths = [...outputPaths].filter(isExistingFile)
+      if (completedOutputPaths.length === 0) {
+        const message = "下载进程成功结束，但没有检测到可访问的结果文件"
+        writeAppConsole("error", `[下载] ${message}`)
+        cb.onError(message)
+        return
+      }
       console.log("✔ 下载完成")
-      cb.onDone({ outputPath })
+      cb.onDone({
+        outputPath: completedOutputPaths[0]!,
+        outputPaths: completedOutputPaths,
+      })
     } else {
       console.error(`✘ 下载失败，进程退出码 ${code}`)
       cb.onError(`进程退出码 ${code}`)

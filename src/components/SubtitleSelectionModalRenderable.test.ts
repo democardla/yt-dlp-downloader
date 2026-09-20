@@ -45,9 +45,11 @@ test("fits above an expanded console and exposes a working cancel button", async
   const panel = modal.findDescendantById("subtitle-selection-panel") as Renderable
   const cancel = modal.findDescendantById("subtitle-selection-cancel") as ActionButtonRenderable
   expect(panel.height).toBeLessThanOrEqual(content.height)
+  expect(panel.height).toBeLessThan(content.height)
   expect(panel.screenY + panel.height).toBeLessThanOrEqual(content.screenY + content.height)
   const frame = testSetup.captureCharFrame()
   expect(frame).toContain("选择可下载字幕")
+  expect(frame).not.toContain("空格切换")
   expect(frame).toContain("ai-zh")
   expect(frame).toContain("取消")
   expect(frame).toContain("提交")

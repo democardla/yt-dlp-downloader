@@ -47,6 +47,7 @@ interface DownloadItem {
   eta: string
   error?: string
   outputPath?: string
+  outputPaths?: string[]
   kill?: () => void
   row?: BoxRenderable
   progressBar?: ProgressBarRenderable
@@ -84,6 +85,11 @@ export function createDownloaderFeature(
 
   const urlInput = new InputRenderable(renderer, {
     id: "url-input",
+    width: "auto",
+    minWidth: 1,
+    flexBasis: 0,
+    flexGrow: 1,
+    flexShrink: 1,
     placeholder: "粘贴视频链接，回车开始下载",
     value: "",
   })
@@ -149,6 +155,25 @@ export function createDownloaderFeature(
     onBeforeOpen: () => presetSelect.setOptions(readPresetOptions()),
   })
 
+  const downloadButton = new ActionButtonRenderable(renderer, {
+    id: "start-download",
+    width: 14,
+    label: "开始下载",
+    background_color: RGBA.fromInts(34, 197, 94, 110),
+    onActivate: () => {
+      void beginDownload()
+    },
+  })
+  const urlActions = new BoxRenderable(renderer, {
+    id: "url-actions",
+    width: "100%",
+    height: 1,
+    flexDirection: "row",
+    gap: 1,
+  })
+  urlActions.add(urlInput)
+  urlActions.add(downloadButton)
+
   const leftPanel = new BoxRenderable(renderer, {
     id: "left-panel",
     width: "40%",
@@ -167,7 +192,7 @@ export function createDownloaderFeature(
     scrollbarOptions: { showArrows: false },
   })
   configScroll.add(new TextRenderable(renderer, { content: "视频 URL", fg: ACCENT }))
-  configScroll.add(urlInput)
+  configScroll.add(urlActions)
   configScroll.add(new TextRenderable(renderer, { content: "输出格式", fg: ACCENT }))
   configScroll.add(formatContainer)
   configScroll.add(new TextRenderable(renderer, { content: "输出目录", fg: ACCENT }))
@@ -477,16 +502,14 @@ export function createDownloaderFeature(
       presetPath,
     }
 
-    let historySaved = false
     let savedHistoryPaths: string[] = []
-    const saveCompletedPath = (path: string) => {
-      const alreadySaved = historySaved && item.outputPath === path
-      item.outputPath = path
-      if (!alreadySaved) {
+    const saveCompletedPaths = (paths: string[]) => {
+      // rememberDownloadedFile prepends entries, so save in reverse to retain
+      // yt-dlp's result order in the history view.
+      for (const path of [...paths].reverse()) {
         savedHistoryPaths = rememberDownloadedFile(path)
-        historySaved = true
-        onHistoryChanged?.()
       }
+      onHistoryChanged?.()
     }
 
     item.kill = startDownload(opts, {
@@ -509,41 +532,54 @@ export function createDownloaderFeature(
       },
       onOutputPath: (path) => {
         if (item.status !== "downloading") return
-        // yt-dlp emits this from after_move, so the file has already reached
-        // its final location. Persist the history immediately instead of
-        // waiting for the child process exit event.
-        saveCompletedPath(path)
-        // Use the final filename once yt-dlp has reported the final path, so
-        // the displayed name and the jump target refer to the same value.
+        item.outputPaths = [...new Set([...(item.outputPaths ?? []), path])]
+        item.outputPath ??= path
+        // Show the detected filename immediately, but only persist it after
+        // the process succeeds and startDownload verifies that it exists.
         const fileName = path.slice(Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1)
-        if (fileName) item.title = fileName
+        if (fileName && item.outputPaths.length === 1) item.title = fileName
         renderList()
       },
-      onDone: ({ outputPath }) => {
+      onDone: ({ outputPath, outputPaths }) => {
         if (item.status !== "downloading") return
+        const completedPaths = [...new Set(outputPaths)]
+        if (completedPaths.length === 0) {
+          item.status = "error"
+          item.error = "任务结束但没有可访问的结果文件"
+          renderList()
+          return
+        }
+
         item.status = "done"
         item.percent = 100
+        item.outputPath = outputPath
+        item.outputPaths = completedPaths
+        saveCompletedPaths(completedPaths)
 
-        const completedPath = outputPath ?? item.outputPath
-        if (completedPath) {
-          if (!historySaved || item.outputPath !== completedPath) saveCompletedPath(completedPath)
-          const historySet = new Set(savedHistoryPaths)
-
-          // Keep active/error tasks, but trim completed items to the persisted
-          // ten most recent successful downloads.
-          for (let index = downloads.length - 1; index >= 0; index--) {
-            const existing = downloads[index]
-            if (!existing) continue
-            if (existing !== item && existing.status === "done" && existing.outputPath
-              && (existing.outputPath === completedPath || !historySet.has(existing.outputPath))) {
-              downloads.splice(index, 1)
-            }
-          }
-
-          const itemIndex = downloads.indexOf(item)
-          if (itemIndex >= 0) downloads.splice(itemIndex, 1)
-          downloads.unshift(item)
+        const primaryFileName = outputPath.slice(Math.max(outputPath.lastIndexOf("/"), outputPath.lastIndexOf("\\")) + 1)
+        if (primaryFileName) {
+          item.title = completedPaths.length === 1
+            ? primaryFileName
+            : `${primaryFileName} 等 ${completedPaths.length} 个文件`
         }
+        const historySet = new Set(savedHistoryPaths)
+        const completedPathSet = new Set(completedPaths)
+
+        // Keep active/error tasks, but trim completed items to the persisted
+        // ten most recent successful files and remove duplicate results.
+        for (let index = downloads.length - 1; index >= 0; index--) {
+          const existing = downloads[index]
+          if (!existing || existing === item || existing.status !== "done") continue
+          const existingPaths = existing.outputPaths ?? (existing.outputPath ? [existing.outputPath] : [])
+          if (existingPaths.some((path) => completedPathSet.has(path))
+            || !existingPaths.some((path) => historySet.has(path))) {
+            downloads.splice(index, 1)
+          }
+        }
+
+        const itemIndex = downloads.indexOf(item)
+        if (itemIndex >= 0) downloads.splice(itemIndex, 1)
+        downloads.unshift(item)
         renderList()
       },
       onError: (msg) => {
@@ -579,6 +615,7 @@ export function createDownloaderFeature(
     formatSelect,
     outDirInput,
     extraArgsInput,
+    downloadButton,
     innerTabs,
   ]
 
