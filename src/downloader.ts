@@ -1,5 +1,6 @@
-import { readFileSync } from "node:fs"
+import { mkdirSync, readFileSync } from "node:fs"
 import { randomUUID } from "node:crypto"
+import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { resolve } from "node:path"
@@ -21,7 +22,7 @@ export interface DownloadProgress {
   eta: string
 }
 
-export type DownloadStatus = "downloading" | "done" | "error"
+export type DownloadStatus = "downloading" | "done" | "error" | "cancelled"
 
 export type SubtitleSource = "original" | "generated"
 
@@ -47,6 +48,8 @@ export interface DownloadOptions {
   subtitleSources?: SubtitleSource[]
   subtitleFormat?: "vtt" | "srt" | "ttml"
   useChromeCookies?: boolean
+  /** Per-task temporary directory, managed by startDownload. */
+  tempDir?: string
   /** 用户选择的 yt-dlp .pre 配置文件；null 表示不使用预设。 */
   presetPath?: string | null
 }
@@ -277,6 +280,7 @@ export function buildArgs(opts: DownloadOptions, titleFile: string, toolchain?: 
       titleFile,
       ...formatArgs(opts),
       ...(toolchain?.ffmpegPath ? ["--ffmpeg-location", toolchain.ffmpegPath] : []),
+      ...(opts.tempDir ? ["--paths", `temp:${opts.tempDir}`] : []),
       ...(opts.presetPath ? ["--config-locations", opts.presetPath] : []),
       "--print",
       "after_move:FILEPATH %(filepath)s",
@@ -379,11 +383,10 @@ export function startDownload(opts: DownloadOptions, cb: DownloadCallbacks, tool
     return () => {}
   }
 
-  const titleFile = join(
-    tmpdir(),
-    `ytdlp-title-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`
-  )
-  const args = buildArgs(opts, titleFile, toolchain)
+  const taskTempDir = join(tmpdir(), "yt-dlp-downloader", randomUUID())
+  mkdirSync(taskTempDir, { recursive: true })
+  const titleFile = join(taskTempDir, "title.txt")
+  const args = buildArgs({ ...opts, tempDir: taskTempDir }, titleFile, toolchain)
   writeAppConsole("log", `[下载] 执行命令：${formatCommand([toolchain.ytDlpPath, ...args])}`)
 
   console.log(`▶ 开始下载: ${opts.url}`)
@@ -397,6 +400,19 @@ export function startDownload(opts: DownloadOptions, cb: DownloadCallbacks, tool
 
   let titleSet = false
   let outputPath: string | undefined
+  let cancelled = false
+  let temporaryFilesCleaned = false
+
+  const cleanupTemporaryFiles = async () => {
+    if (temporaryFilesCleaned) return
+    temporaryFilesCleaned = true
+    try {
+      await rm(taskTempDir, { recursive: true, force: true })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      writeAppConsole("warn", `[下载] 清理临时文件失败：${message}`)
+    }
+  }
 
   // 标题由 --print-to-file before_dl 写入临时文件，这里惰性读取
   const readTitle = () => {
@@ -440,7 +456,12 @@ export function startDownload(opts: DownloadOptions, cb: DownloadCallbacks, tool
   // 等待进程结束
   void proc.exited.then(async (code) => {
     await Promise.all([stdoutDone, stderrDone])
+    if (cancelled) {
+      await cleanupTemporaryFiles()
+      return
+    }
     readTitle()
+    await cleanupTemporaryFiles()
     if (code === 0) {
       console.log("✔ 下载完成")
       cb.onDone({ outputPath })
@@ -449,16 +470,20 @@ export function startDownload(opts: DownloadOptions, cb: DownloadCallbacks, tool
       cb.onError(`进程退出码 ${code}`)
     }
   }).catch((err) => {
+    if (cancelled) return
     const msg = err instanceof Error ? err.message : String(err)
     console.error(`✘ 下载异常: ${msg}`)
     cb.onError(msg)
   })
 
   return () => {
+    if (cancelled) return
+    cancelled = true
     try {
       proc.kill()
     } catch {
       /* ignore */
     }
+    void proc.exited.then(cleanupTemporaryFiles).catch(cleanupTemporaryFiles)
   }
 }

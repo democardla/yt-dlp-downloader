@@ -13,6 +13,7 @@ import { readdirSync } from "node:fs"
 import { resolve } from "node:path"
 import {
   ProgressBarRenderable,
+  ActionButtonRenderable,
   StatusSelectRenderable,
   StyledSelectRenderable,
   TabBarRenderable,
@@ -49,6 +50,7 @@ interface DownloadItem {
   kill?: () => void
   row?: BoxRenderable
   progressBar?: ProgressBarRenderable
+  cancelButton?: ActionButtonRenderable
 }
 
 const ACCENT = RGBA.fromHex("#7FC7FF")
@@ -72,7 +74,7 @@ export function createDownloaderFeature(
   // The completed tab is session-only. Persistent records are shown in the
   // top-level Download History tab instead.
   const downloads: DownloadItem[] = []
-  let activeTab: 0 | 1 | 2 = 0 // 0 = 下载中, 1 = 已完成, 2 = 未成功
+  let activeTab: 0 | 1 | 2 | 3 = 0 // 0 = 下载中, 1 = 已完成, 2 = 未成功, 3 = 已取消
   let subtitleModal: SubtitleSelectionModalRenderable | null = null
   let subtitleQuerying = false
 
@@ -186,9 +188,10 @@ export function createDownloaderFeature(
       { name: " 下载中 ", value: 0, badge: { value: 0, shown: true } },
       { name: " 已完成 ", value: 1, badge: { value: 0, shown: true } },
       { name: " 未成功 ", value: 2, badge: { value: 0, shown: true } },
+      { name: " 已取消 ", value: 3, badge: { value: 0, shown: true } },
     ],
     onChange: (_option, index) => {
-      activeTab = index as 0 | 1 | 2
+      activeTab = index as 0 | 1 | 2 | 3
       renderList()
     },
   })
@@ -261,6 +264,16 @@ export function createDownloaderFeature(
     writeAppConsole("log", `[字幕] 已获取 ${tracks.length} 个可用字幕选项：${url}`)
   }
 
+  function cancelDownload(item: DownloadItem): void {
+    if (item.status !== "downloading") return
+    item.status = "cancelled"
+    item.error = "用户取消下载"
+    item.kill?.()
+    item.kill = undefined
+    writeAppConsole("warn", `[下载] 已取消任务：${item.title || item.url}`)
+    renderList()
+  }
+
   // -------------------------------------------------------------------------
   // 列表渲染
   // -------------------------------------------------------------------------
@@ -268,15 +281,21 @@ export function createDownloaderFeature(
   function renderList() {
     const items = downloads.filter((d) => activeTab === 0
       ? d.status === "downloading"
-      : activeTab === 1 ? d.status === "done" : d.status === "error")
+      : activeTab === 1
+        ? d.status === "done"
+        : activeTab === 2
+          ? d.status === "error"
+          : d.status === "cancelled")
 
     const downloadingCount = downloads.filter((d) => d.status === "downloading").length
     const doneCount = downloads.filter((d) => d.status === "done").length
     const errorCount = downloads.filter((d) => d.status === "error").length
+    const cancelledCount = downloads.filter((d) => d.status === "cancelled").length
     innerTabs.setOptions([
       { name: " 下载中 ", value: 0, badge: { value: downloadingCount, shown: true } },
       { name: " 已完成 ", value: 1, badge: { value: doneCount, shown: true } },
       { name: " 未成功 ", value: 2, badge: { value: errorCount, shown: true } },
+      { name: " 已取消 ", value: 3, badge: { value: cancelledCount, shown: true } },
     ])
 
     for (const child of listScroll.getChildren()) listScroll.remove(child.id)
@@ -290,7 +309,13 @@ export function createDownloaderFeature(
         justifyContent: "center",
         alignItems: "center",
       })
-      const emptyLabel = activeTab === 0 ? "DLD" : activeTab === 1 ? "FIN" : "FAIL"
+      const emptyLabel = activeTab === 0
+        ? "DLD"
+        : activeTab === 1
+          ? "FIN"
+          : activeTab === 2
+            ? "FAIL"
+            : "CANC"
       emptyState.add(new ASCIIFontRenderable(renderer, {
         text: emptyLabel,
         font: "tiny",
@@ -303,7 +328,7 @@ export function createDownloaderFeature(
 
     for (const item of items) {
       const statusIcon =
-        item.status === "downloading" ? "⟳" : item.status === "done" ? "✓" : "✗"
+        item.status === "downloading" ? "⟳" : item.status === "done" ? "✓" : item.status === "cancelled" ? "■" : "✗"
 
       const row = new BoxRenderable(renderer, {
         id: `download-row-${item.id}`,
@@ -337,11 +362,23 @@ export function createDownloaderFeature(
         })
         item.progressBar = progressBar
         row.add(progressBar)
+        const cancelButton = new ActionButtonRenderable(renderer, {
+          id: `cancel-download-${item.id}`,
+          width: 8,
+          label: "取消",
+          background_color: RGBA.fromInts(220, 70, 70, 95),
+          onActivate: () => cancelDownload(item),
+        })
+        item.cancelButton = cancelButton
+        row.add(cancelButton)
       } else {
         item.progressBar = undefined
+        item.cancelButton = undefined
         const status = item.status === "done"
           ? item.outputPath ? "[单击查看]" : "[完成]"
-          : `[失败] ${item.error || ""}`
+          : item.status === "cancelled"
+            ? `[已取消] ${item.error || ""}`
+            : `[失败] ${item.error || ""}`
         const statusText = new TextRenderable(renderer, {
           content: status,
           wrapMode: "none",
@@ -454,10 +491,12 @@ export function createDownloaderFeature(
 
     item.kill = startDownload(opts, {
       onTitle: (title) => {
+        if (item.status !== "downloading") return
         item.title = title
         renderList()
       },
       onProgress: (p) => {
+        if (item.status !== "downloading") return
         item.percent = p.percent
         item.speed = p.speed
         item.eta = p.eta
@@ -469,6 +508,7 @@ export function createDownloaderFeature(
         }
       },
       onOutputPath: (path) => {
+        if (item.status !== "downloading") return
         // yt-dlp emits this from after_move, so the file has already reached
         // its final location. Persist the history immediately instead of
         // waiting for the child process exit event.
@@ -480,6 +520,7 @@ export function createDownloaderFeature(
         renderList()
       },
       onDone: ({ outputPath }) => {
+        if (item.status !== "downloading") return
         item.status = "done"
         item.percent = 100
 
@@ -506,6 +547,7 @@ export function createDownloaderFeature(
         renderList()
       },
       onError: (msg) => {
+        if (item.status !== "downloading") return
         item.status = "error"
         item.error = msg
         renderList()
@@ -542,7 +584,12 @@ export function createDownloaderFeature(
 
   return {
     root,
-    getFocusables: () => subtitleModal?.getFocusables() ?? focusables,
+    getFocusables: () => subtitleModal?.getFocusables() ?? [
+      ...focusables,
+      ...downloads
+        .filter((item) => item.status === "downloading" && item.cancelButton)
+        .map((item) => item.cancelButton!),
+    ],
     focusFirst: () => (subtitleModal?.getFocusables()[0] ?? urlInput).focus(),
   }
 }

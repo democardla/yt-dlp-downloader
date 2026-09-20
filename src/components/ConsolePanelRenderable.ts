@@ -3,9 +3,8 @@ import { BoxRenderable, ScrollBoxRenderable, TextRenderable, RGBA, type CliRende
 let activePanel: ConsolePanelRenderable | null = null
 
 export class ConsolePanelRenderable extends BoxRenderable {
-  private readonly output: TextRenderable
   private readonly scroll: ScrollBoxRenderable
-  private readonly lines: string[] = []
+  private readonly lines: BoxRenderable[] = []
 
   constructor(renderer: CliRenderer, options: { height?: number; enabled?: boolean } = {}) {
     super(renderer, {
@@ -25,16 +24,46 @@ export class ConsolePanelRenderable extends BoxRenderable {
       stickyScroll: true,
       scrollbarOptions: { showArrows: false },
     })
-    this.output = new TextRenderable(renderer, { content: "控制台已就绪", fg: RGBA.fromHex("#9CA3AF") })
-    this.scroll.add(this.output)
     this.add(this.scroll)
+    this.append("log", "控制台已就绪")
     activePanel = this
   }
 
   public append(level: "log" | "warn" | "error", message: string): void {
-    this.lines.push(`[${level.toUpperCase()}] ${message}`)
-    if (this.lines.length > 500) this.lines.shift()
-    this.output.content = this.lines.join("\n")
+    const label = new TextRenderable(this.ctx, {
+      content: `[${level.toUpperCase()}]`,
+      width: 7,
+      height: 1,
+      selectable: false,
+      wrapMode: "none",
+      fg: level === "warn"
+        ? RGBA.fromHex("#FACC15")
+        : level === "error"
+          ? RGBA.fromHex("#EF4444")
+          : RGBA.fromHex("#9CA3AF"),
+    })
+    const body = new TextRenderable(this.ctx, {
+      content: ` ${message}`,
+      flexGrow: 1,
+      height: 1,
+      selectable: false,
+      wrapMode: "none",
+      truncate: true,
+      fg: RGBA.fromHex("#9CA3AF"),
+    })
+    const line = new BoxRenderable(this.ctx, {
+      width: "100%",
+      height: 1,
+      flexDirection: "row",
+    })
+    line.add(label)
+    line.add(body)
+    this.lines.push(line)
+    this.scroll.add(line)
+    if (this.lines.length > 500) {
+      const oldest = this.lines.shift()
+      if (oldest) this.scroll.remove(oldest.id)
+    }
     this.scroll.scrollTo({ x: 0, y: this.scroll.scrollHeight })
     this.requestRender()
   }
