@@ -21,6 +21,7 @@ export interface SubtitleSelectionModalOptions extends RenderableOptions {
 /** Modal subtitle picker with a scrollable, mouse-friendly multi-select list. */
 export class SubtitleSelectionModalRenderable extends BoxRenderable {
   private readonly selection: MultiSelectRenderable
+  private readonly cancelButton: ActionButtonRenderable
   private readonly submitButton: ActionButtonRenderable
   private readonly keyHandler: (key: KeyEvent) => void
   private readonly tracks: SubtitleTrack[]
@@ -29,9 +30,6 @@ export class SubtitleSelectionModalRenderable extends BoxRenderable {
 
   constructor(ctx: RenderContext, options: SubtitleSelectionModalOptions) {
     const { tracks, onSubmit, onCancel, ...rest } = options
-    const panelHeight = Math.max(10, Math.min(24, ctx.height - 4))
-    const listHeight = Math.max(3, panelHeight - 7)
-    const panelWidth = Math.max(24, Math.min(90, ctx.width - 4))
 
     super(ctx, {
       ...rest,
@@ -44,6 +42,8 @@ export class SubtitleSelectionModalRenderable extends BoxRenderable {
       zIndex: 100,
       alignItems: "center",
       justifyContent: "center",
+      paddingX: 2,
+      paddingY: 1,
       backgroundColor: RGBA.fromInts(0, 0, 0, 125),
     })
 
@@ -53,8 +53,13 @@ export class SubtitleSelectionModalRenderable extends BoxRenderable {
 
     const panel = new BoxRenderable(ctx, {
       id: "subtitle-selection-panel",
-      width: panelWidth,
-      height: panelHeight,
+      // Size against the modal's actual parent rather than ctx.height. The
+      // latter includes the bottom console, while this modal lives inside the
+      // smaller content area and would therefore be clipped when it was open.
+      width: "100%",
+      maxWidth: 90,
+      height: "100%",
+      maxHeight: 24,
       border: true,
       borderStyle: "rounded",
       borderColor: RGBA.fromHex("#7FC7FF"),
@@ -77,7 +82,7 @@ export class SubtitleSelectionModalRenderable extends BoxRenderable {
 
     const list = new ScrollBoxRenderable(ctx, {
       id: "subtitle-selection-scroll",
-      height: listHeight,
+      minHeight: 1,
       flexGrow: 1,
       scrollY: true,
       scrollX: false,
@@ -106,6 +111,14 @@ export class SubtitleSelectionModalRenderable extends BoxRenderable {
       height: 1,
       flexDirection: "row",
       justifyContent: "flex-end",
+      gap: 1,
+    })
+    this.cancelButton = new ActionButtonRenderable(ctx, {
+      id: "subtitle-selection-cancel",
+      width: 12,
+      label: "取消",
+      background_color: RGBA.fromInts(220, 70, 80, 110),
+      onActivate: this.onCancel,
     })
     this.submitButton = new ActionButtonRenderable(ctx, {
       id: "subtitle-selection-submit",
@@ -115,6 +128,7 @@ export class SubtitleSelectionModalRenderable extends BoxRenderable {
       background_color: RGBA.fromInts(55, 150, 220, 110),
       onActivate: () => this.submit(),
     })
+    footer.add(this.cancelButton)
     footer.add(this.submitButton)
     panel.add(footer)
     this.add(panel)
@@ -127,7 +141,7 @@ export class SubtitleSelectionModalRenderable extends BoxRenderable {
   }
 
   getFocusables(): Renderable[] {
-    return [this.selection, this.submitButton]
+    return [this.selection, this.cancelButton, this.submitButton]
   }
 
   private submit(): void {

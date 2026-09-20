@@ -249,7 +249,7 @@ export function createDownloaderFeature(
   }
 
   function showSubtitleModal(url: string, tracks: SubtitleTrack[]): void {
-    subtitleModal?.destroy()
+    if (subtitleModal) closeSubtitleModal()
     subtitleModal = new SubtitleSelectionModalRenderable(renderer, {
       id: "subtitle-selection-modal",
       tracks,
