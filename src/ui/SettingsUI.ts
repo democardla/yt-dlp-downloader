@@ -1,15 +1,15 @@
 import { BoxRenderable, InputRenderable, InputRenderableEvents, ScrollBoxRenderable, TextRenderable, RGBA, type CliRenderer, type Renderable } from "@opentui/core"
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
-import { setAppConsoleEnabled, setAppConsoleTruncate, SidebarNavRenderable, StatusSelectRenderable } from "./components"
-import { Configs, formatSortToString, type DownloadNetworkConfig, type FormatSort, type OutputConfig, type SubtitleConfig, type VideoFormatConfig } from "./handles"
-import { getDefaultDownloadDirectory } from "./runtime/Toolchain"
+import { setAppConsoleEnabled, setAppConsoleTruncate, SidebarNavRenderable, StatusSelectRenderable } from "../components"
+import { Configs, formatSortToString, type DownloadNetworkConfig, type FormatSort, type GeneralConfig, type OutputConfig, type SubtitleConfig, type VideoFormatConfig } from "../handles"
+import { getDefaultDownloadDirectory } from "../runtime/Toolchain"
 
 // Use cwd so both Bun source mode and compiled single-file mode can write it.
 const CONFIG_PATH = resolve("yt-dlp-downloader/config.json")
-type ConfigSection = "downloadNetwork" | "output" | "subtitle" | "videoFormat" | "console"
+type ConfigSection = "general" | "downloadNetwork" | "output" | "subtitle" | "videoFormat" | "console"
 type ConfigValue = string | number | boolean | null
-type ConfigObject = DownloadNetworkConfig | OutputConfig | SubtitleConfig | VideoFormatConfig | { enabled: boolean; truncate: boolean }
+type ConfigObject = GeneralConfig | DownloadNetworkConfig | OutputConfig | SubtitleConfig | VideoFormatConfig | { enabled: boolean; truncate: boolean }
 type SettingType = "toggle" | "select" | "input"
 
 interface SettingItemDef {
@@ -24,6 +24,9 @@ interface SettingItemDef {
 interface SettingsCategoryDef { name: string; description: string; items: SettingItemDef[] }
 
 const SCHEMA: SettingsCategoryDef[] = [
+  { name: " 通用 ", description: "应用级任务调度配置", items: [
+    { section: "general", property: "max_concurrent_tasks", type: "input", label: "最大并发任务数量", placeholder: "例如 2" },
+  ] },
   { name: " 下载网络 ", description: "下载速度与重试相关配置", items: [
     { section: "downloadNetwork", property: "concurrent_fragments", type: "input", label: "Fragment 并发数", placeholder: "例如 4" },
     { section: "downloadNetwork", property: "limit_rate", type: "input", label: "下载速度限制", placeholder: "例如 5M" },
@@ -155,8 +158,14 @@ export function createSettingsFeature(renderer: CliRenderer): SettingsFeature {
       const input = new InputRenderable(renderer, { flexGrow: 1, value: current === null || current === undefined ? "" : String(current), placeholder: item.placeholder })
       input.on(InputRenderableEvents.ENTER, () => {
         const value = input.value.trim()
-        if (value === "") setConfigValue(configs, item, null, formatSortFields)
+        if (value === "") {
+          setConfigValue(configs, item, item.section === "general" ? 2 : null, formatSortFields)
+        }
         else if (item.section === "downloadNetwork" && ["concurrent_fragments", "retries", "fragment_retries", "file_access_retries"].includes(item.property)) setConfigValue(configs, item, value === "infinite" ? value : Number(value), formatSortFields)
+        else if (item.section === "general" && item.property === "max_concurrent_tasks") {
+          const parsed = Number(value)
+          if (Number.isFinite(parsed)) setConfigValue(configs, item, Math.max(1, Math.floor(parsed)), formatSortFields)
+        }
         else setConfigValue(configs, item, value, formatSortFields)
       })
       control = input

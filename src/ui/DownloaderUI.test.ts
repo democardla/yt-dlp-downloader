@@ -1,9 +1,9 @@
 import { afterEach, expect, test } from "bun:test"
 import { BoxRenderable, InputRenderable, type Renderable } from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
-import { ActionButtonRenderable } from "./components/ActionButtonRenderable"
+import { ActionButtonRenderable } from "../components/ActionButtonRenderable"
 import { createDownloaderFeature } from "./DownloaderUI"
-import type { Toolchain } from "./runtime/Toolchain"
+import type { Toolchain } from "../runtime/Toolchain"
 
 let renderer: Awaited<ReturnType<typeof createTestRenderer>>["renderer"] | null = null
 

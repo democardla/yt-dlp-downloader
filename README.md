@@ -171,8 +171,11 @@ yt-dlp --cookies-from-browser chrome \
 ```text
 src/
 ├── index.ts                 # 应用入口和顶层布局
-├── DownloaderUI.ts          # 下载器界面和任务列表
-├── SettingsUI.ts            # 设置界面
+├── ui/                      # 顶层功能界面
+│   ├── DownloaderUI.ts      # 下载器界面和任务列表
+│   ├── ConversionUI.ts      # 视频、音频转换界面
+│   ├── DownloadHistoryUI.ts # 下载历史界面
+│   └── SettingsUI.ts        # 设置界面
 ├── downloader.ts            # yt-dlp 进程及参数构建
 ├── runtime/
 │   └── Toolchain.ts         # 操作系统和外部工具路径检测
@@ -187,6 +190,9 @@ yt-dlp-downloader/           # 运行时配置和预设文件目录
 
 - [ConsolePanelRenderable](./md/ConsolePanelRenderable.md)
 - [CustomSpinnerRenderable](./md/CustomSpinnerRenderable.md)
+- [BorderlessTableRenderable](./md/BorderlessTableRenderable.md)
+- [FileDropInputRenderable](./md/FileDropInputRenderable.md)
+- [MatrixSelectRenderable](./md/MatrixSelectRenderable.md)
 - [MultiSelectRenderable](./md/MultiSelectRenderable.md)
 - [ProgressBarRenderable](./md/ProgressBarRenderable.md)
 - [SidebarNavRenderable](./md/SidebarNavRenderable.md)

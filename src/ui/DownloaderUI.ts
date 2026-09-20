@@ -19,19 +19,19 @@ import {
   TabBarRenderable,
   SubtitleSelectionModalRenderable,
   writeAppConsole,
-} from "./components"
+} from "../components"
 import {
   fetchAvailableSubtitles,
   startDownload,
   type DownloadOptions,
   type DownloadStatus,
   type SubtitleTrack,
-} from "./downloader"
-import { getDefaultDownloadDirectory, revealInFileManager, type Toolchain } from "./runtime/Toolchain"
+} from "../downloader"
+import { getDefaultDownloadDirectory, revealInFileManager, type Toolchain } from "../runtime/Toolchain"
 import {
   rememberDownloadedFile,
-} from "./runtime/DownloadHistory"
-import { Configs } from "./handles/Configs"
+} from "../runtime/DownloadHistory"
+import { Configs } from "../handles/Configs"
 
 // ---------------------------------------------------------------------------
 // 数据模型
@@ -391,6 +391,7 @@ export function createDownloaderFeature(
           id: `cancel-download-${item.id}`,
           width: 8,
           label: "取消",
+          danger: true,
           background_color: RGBA.fromInts(220, 70, 70, 95),
           onActivate: () => cancelDownload(item),
         })
@@ -503,11 +504,12 @@ export function createDownloaderFeature(
     }
 
     let savedHistoryPaths: string[] = []
+    const historySource = formatOpt === "subtitle" ? "字幕下载" : "下载器"
     const saveCompletedPaths = (paths: string[]) => {
       // rememberDownloadedFile prepends entries, so save in reverse to retain
       // yt-dlp's result order in the history view.
       for (const path of [...paths].reverse()) {
-        savedHistoryPaths = rememberDownloadedFile(path)
+        savedHistoryPaths = rememberDownloadedFile(path, historySource).map((entry) => entry.filePath)
       }
       onHistoryChanged?.()
     }

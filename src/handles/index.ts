@@ -1,6 +1,7 @@
 // 统一导出所有自定义组件
 export { Configs } from "./Configs"
 export { ConsoleConfig } from "./ConsoleConfig"
+export { GeneralConfig } from "./GeneralConfig"
 export { DownloadNetworkConfig } from "./DownloadNetworkConfig"
 export { OutputConfig } from "./OutputConfig"
 export { SubtitleConfig } from "./SubtitleConfig"

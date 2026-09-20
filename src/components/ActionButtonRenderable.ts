@@ -6,6 +6,8 @@ export interface ActionButtonOptions extends RenderableOptions {
   /** Normal button background. Kept snake_case for configuration-style callers. */
   background_color?: string | RGBA
   disabled?: boolean
+  /** Use red text for destructive actions such as clear, cancel, and stop. */
+  danger?: boolean
 }
 
 /** Small keyboard- and mouse-friendly action button for configuration panels. */
@@ -16,9 +18,10 @@ export class ActionButtonRenderable extends TextRenderable {
   private pressed = false
   private pointerDown = false
   private _disabled: boolean
+  private readonly danger: boolean
 
   constructor(ctx: RenderContext, options: ActionButtonOptions) {
-    const { label, onActivate, background_color, disabled = false, ...rest } = options
+    const { label, onActivate, background_color, disabled = false, danger = false, ...rest } = options
     super(ctx, {
       ...rest,
       height: rest.height ?? 1,
@@ -33,6 +36,7 @@ export class ActionButtonRenderable extends TextRenderable {
     this.onActivate = onActivate
     this.normalBackground = background_color ?? RGBA.fromInts(55, 150, 220, 55)
     this._disabled = disabled
+    this.danger = danger
     this.updateAppearance()
 
     this.onMouseOver = () => {
@@ -101,7 +105,7 @@ export class ActionButtonRenderable extends TextRenderable {
       this.fg = RGBA.fromHex("#FFFFFF")
       this.bg = RGBA.fromInts(55, 150, 220, 150)
     } else {
-      this.fg = RGBA.fromHex("#8BE9FD")
+      this.fg = this.danger ? RGBA.fromHex("#EF4444") : RGBA.fromHex("#8BE9FD")
       this.bg = this.normalBackground
     }
     this.requestRender()

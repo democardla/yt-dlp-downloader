@@ -112,6 +112,7 @@ export class SubtitleSelectionModalRenderable extends BoxRenderable {
       id: "subtitle-selection-cancel",
       width: 12,
       label: "取消",
+      danger: true,
       background_color: RGBA.fromInts(220, 70, 80, 110),
       onActivate: this.onCancel,
     })

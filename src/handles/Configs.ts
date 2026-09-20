@@ -12,6 +12,7 @@ import { OutputConfig } from "./OutputConfig"
 import { SubtitleConfig } from "./SubtitleConfig"
 import { VideoFormatConfig } from "./VideoFormatConfig"
 import { ConsoleConfig } from "./ConsoleConfig"
+import { GeneralConfig } from "./GeneralConfig"
 
 export interface DownloadNetworkShape {
   concurrent_fragments?: number | null
@@ -65,6 +66,10 @@ export interface ConsoleShape {
   truncate?: boolean
 }
 
+export interface GeneralShape {
+  max_concurrent_tasks?: number
+}
+
 export interface ConfigsJSON {
   name?: string
   description?: string
@@ -74,6 +79,7 @@ export interface ConfigsJSON {
   subtitle?: SubtitleShape
   videoFormat?: VideoFormatShape
   console?: ConsoleShape
+  general?: GeneralShape
 }
 
 export class Configs {
@@ -95,6 +101,8 @@ export class Configs {
   public videoFormat: VideoFormatConfig = new VideoFormatConfig()
   @Type(() => ConsoleConfig)
   public console: ConsoleConfig = new ConsoleConfig()
+  @Type(() => GeneralConfig)
+  public general: GeneralConfig = new GeneralConfig()
 
     public static async loadFromFile(filePath: string): Promise<Configs> {
         const fileContent = await fs.readFile(filePath, 'utf-8');
@@ -118,6 +126,7 @@ export class Configs {
             subtitle: this.subtitle,
             videoFormat: this.videoFormat,
             console: this.console,
+            general: this.general,
         };
         const fileContent = JSON.stringify(jsonData, null, 2);
         await fs.writeFile(filePath, fileContent, 'utf-8');
@@ -132,6 +141,7 @@ export class Configs {
             subtitle: this.subtitle,
             videoFormat: this.videoFormat,
             console: this.console,
+            general: this.general,
         }
         mkdirSync(dirname(filePath), { recursive: true })
         writeFileSync(filePath, JSON.stringify(jsonData, null, 2) + "\n", "utf8")

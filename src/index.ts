@@ -5,9 +5,14 @@ import {
   RGBA,
   type Renderable,
 } from "@opentui/core"
-import { createDownloaderFeature } from "./DownloaderUI"
-import { createDownloadHistoryFeature, type DownloadHistoryFeature } from "./DownloadHistoryUI"
-import { createSettingsFeature } from "./SettingsUI"
+import {
+  createAudioConversionFeature,
+  createDownloadHistoryFeature,
+  createDownloaderFeature,
+  createSettingsFeature,
+  createVideoConversionFeature,
+  type DownloadHistoryFeature,
+} from "./ui"
 import { ActionButtonRenderable, ConsolePanelRenderable, TabBarRenderable, writeAppConsole } from "./components"
 import { access, mkdir } from "node:fs/promises";
 import { resolveToolchain } from "./runtime/Toolchain"
@@ -82,6 +87,8 @@ logToolchainResult("启动检测", toolchain)
 // 下载器（真实功能）
 const downloadHistory: DownloadHistoryFeature = createDownloadHistoryFeature(renderer)
 const downloader: Feature = createDownloaderFeature(renderer, toolchain, downloadHistory.refresh, chrome.available)
+const videoConversion: Feature = createVideoConversionFeature(renderer, toolchain, downloadHistory.refresh)
+const audioConversion: Feature = createAudioConversionFeature(renderer, toolchain, downloadHistory.refresh)
 
 // 关于（占位）
 function createPlaceholderFeature(id: string, title: string, body: string): Feature {
@@ -111,7 +118,7 @@ const about: Feature = createPlaceholderFeature(
   "yt-dlp 下载器\n基于 OpenTUI + yt-dlp\n\n输入视频链接即可下载为 mp4 / mp3"
 )
 
-const features: Feature[] = [downloader, downloadHistory, settings, about]
+const features: Feature[] = [downloader, videoConversion, audioConversion, downloadHistory, settings, about]
 
 // ---------------------------------------------------------------------------
 // 顶部标签页（切换功能）
@@ -122,7 +129,9 @@ const featureTabs = new TabBarRenderable(renderer, {
   flexGrow: 1,
   options: [
     { name: " 下载器 ", description: "下载视频 / 音频" },
-    { name: " 下载历史 ", description: "最近成功下载的文件" },
+    { name: " 视频转换 ", description: "视频转视频 / 音频" },
+    { name: " 音频转换 ", description: "音频格式转换" },
+    { name: " 历史 ", description: "最近成功处理的文件" },
     { name: " 设置 ", description: "配置参数" },
     { name: " 关于 ", description: "关于本工具" },
   ],

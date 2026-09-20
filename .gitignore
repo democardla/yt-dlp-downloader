@@ -10,6 +10,9 @@ dist
 # local downloader binaries (not committed to the public repository)
 /bin/
 
+# local task history contains machine-specific file paths
+yt-dlp-downloader/download-history.json
+
 # code coverage
 coverage
 *.lcov
