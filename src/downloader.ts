@@ -161,6 +161,11 @@ function stripFlags(args: string[], flags: string[]): string[] {
   return args.filter((arg) => !flags.includes(arg))
 }
 
+/** Format argv for the console without exposing any browser cookie values. */
+export function formatCommand(args: string[]): string {
+  return args.map((arg) => /^[A-Za-z0-9_@%+=:,./-]+$/.test(arg) ? arg : JSON.stringify(arg)).join(" ")
+}
+
 function parseSubtitleTracks(metadata: unknown): SubtitleTrack[] {
   if (!metadata || typeof metadata !== "object") return []
   const record = metadata as Record<string, unknown>
@@ -190,8 +195,7 @@ export async function fetchAvailableSubtitles(url: string, toolchain: Toolchain)
     throw new Error(toolchain.diagnostics.join("；") || "外部工具链未准备完成")
   }
 
-  const proc = Bun.spawn([
-    toolchain.ytDlpPath,
+  const args = [
     "--skip-download",
     "--dump-single-json",
     "--no-playlist",
@@ -199,7 +203,10 @@ export async function fetchAvailableSubtitles(url: string, toolchain: Toolchain)
     "--cookies-from-browser",
     "chrome",
     url,
-  ], {
+  ]
+  writeAppConsole("log", `[字幕查询] 执行命令：${formatCommand([toolchain.ytDlpPath, ...args])}`)
+
+  const proc = Bun.spawn([toolchain.ytDlpPath, ...args], {
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
@@ -377,6 +384,7 @@ export function startDownload(opts: DownloadOptions, cb: DownloadCallbacks, tool
     `ytdlp-title-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`
   )
   const args = buildArgs(opts, titleFile, toolchain)
+  writeAppConsole("log", `[下载] 执行命令：${formatCommand([toolchain.ytDlpPath, ...args])}`)
 
   console.log(`▶ 开始下载: ${opts.url}`)
 
