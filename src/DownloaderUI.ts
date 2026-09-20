@@ -382,7 +382,10 @@ export function createDownloaderFeature(
       try {
         const tracks = await fetchAvailableSubtitles(url, toolchain)
         if (tracks.length === 0) {
-          writeAppConsole("warn", `[字幕] 视频没有可用字幕：${url}`)
+          writeAppConsole(
+            "warn",
+            `[字幕] 未检测到可用字幕：${url}。可能是视频确实没有字幕，也可能是 Chrome 当前配置文件没有该网站的 Cookie。`,
+          )
           return
         }
         showSubtitleModal(url, tracks)
