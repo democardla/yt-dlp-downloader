@@ -57,6 +57,20 @@ export interface DownloadOptions {
 
 
 const CONFIG_PATH = resolve("yt-dlp-downloader/config.json")
+
+const BROWSER_COOKIE_ERROR = /(cookie|keyring|decrypt|browser profile|profile path|cookies database)/i
+
+export function isBrowserCookieError(message: string): boolean {
+  return BROWSER_COOKIE_ERROR.test(message)
+}
+
+export function describeBrowserCookieError(message: string): string {
+  return [
+    "Chrome Cookie 不可用，可能原因：当前 Chrome 配置文件没有登录该网站、Cookie 不在默认配置文件中，或系统拒绝了 yt-dlp 读取/解密 Cookie。",
+    `yt-dlp 原始错误：${message}`,
+  ].join(" ")
+}
+
 /** 把 ~ 展开为用户主目录 */
 function expandHome(p: string): string {
   if (p === "~") return process.env.HOME ?? p
@@ -201,7 +215,8 @@ export async function fetchAvailableSubtitles(url: string, toolchain: Toolchain)
   const stderr = decodeToolText(new Uint8Array(stderrBytes)).trim()
 
   if (exitCode !== 0) {
-    throw new Error(stderr || `获取字幕列表失败，进程退出码 ${exitCode}`)
+    const message = stderr || `获取字幕列表失败，进程退出码 ${exitCode}`
+    throw new Error(isBrowserCookieError(message) ? describeBrowserCookieError(message) : message)
   }
 
   try {
@@ -339,6 +354,9 @@ function logToConsole(line: string) {
   } else if (trimmed.startsWith("ERROR")) {
     console.error(`[yt-dlp] ${trimmed}`)
     writeAppConsole("error", `[yt-dlp] ${trimmed}`)
+    if (isBrowserCookieError(trimmed)) {
+      writeAppConsole("error", `[Chrome Cookie] ${describeBrowserCookieError(trimmed)}`)
+    }
   } else {
     console.log(`[yt-dlp] ${trimmed}`)
     writeAppConsole("log", `[yt-dlp] ${trimmed}`)
