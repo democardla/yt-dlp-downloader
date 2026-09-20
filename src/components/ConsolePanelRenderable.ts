@@ -45,16 +45,17 @@ export class ConsolePanelRenderable extends BoxRenderable {
     const body = new TextRenderable(this.ctx, {
       content: ` ${message}`,
       flexGrow: 1,
-      height: 1,
       selectable: false,
-      wrapMode: "none",
-      truncate: true,
+      // Keep the complete command/error text. Long lines occupy additional
+      // terminal rows instead of being replaced with an ellipsis.
+      wrapMode: "char",
+      truncate: false,
       fg: RGBA.fromHex("#9CA3AF"),
     })
     const line = new BoxRenderable(this.ctx, {
       width: "100%",
-      height: 1,
       flexDirection: "row",
+      alignItems: "flex-start",
     })
     line.add(label)
     line.add(body)
