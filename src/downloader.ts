@@ -23,6 +23,13 @@ export interface DownloadProgress {
 
 export type DownloadStatus = "downloading" | "done" | "error"
 
+export type SubtitleSource = "original" | "generated"
+
+export interface SubtitleTrack {
+  language: string
+  source: SubtitleSource
+}
+
 export interface DownloadCallbacks {
   onTitle: (title: string) => void
   onProgress: (p: DownloadProgress) => void
@@ -36,6 +43,10 @@ export interface DownloadOptions {
   format: "mp4" | "mp3" | "subtitle"
   outDir: string
   extraArgs: string[]
+  subtitleLanguages?: string[]
+  subtitleSources?: SubtitleSource[]
+  subtitleFormat?: "vtt" | "srt" | "ttml"
+  useChromeCookies?: boolean
   /** 用户选择的 yt-dlp .pre 配置文件；null 表示不使用预设。 */
   presetPath?: string | null
 }
@@ -97,14 +108,23 @@ export function loadConfigArgs(): string[] {
 }
 
 /** 根据用户选择的格式返回对应的 yt-dlp 参数 */
-function formatArgs(format: DownloadOptions["format"]): string[] {
-  switch (format) {
+function formatArgs(opts: DownloadOptions): string[] {
+  switch (opts.format) {
     case "mp3":
       return ["-t", "mp3"]
     case "mp4":
       return ["-t", "mp4"]
-    case "subtitle":
-      return ["--skip-download", "--write-subs", "--sub-langs", "zh-Hans"]
+    case "subtitle": {
+      const sources = new Set(opts.subtitleSources ?? ["original"])
+      const languages = [...new Set((opts.subtitleLanguages ?? []).map((language) => language.trim()).filter(Boolean))]
+      const args = ["--skip-download"]
+      if (sources.has("original")) args.push("--write-subs")
+      if (sources.has("generated")) args.push("--write-auto-subs")
+      args.push("--sub-format", opts.subtitleFormat ?? "vtt")
+      args.push("--sub-langs", languages.join(",") || "all")
+      if (opts.useChromeCookies) args.push("--cookies-from-browser", "chrome")
+      return args
+    }
     default:
       return []
   }
@@ -123,6 +143,74 @@ function stripFlagWithValue(args: string[], flags: string[]): string[] {
   return out
 }
 
+function stripFlags(args: string[], flags: string[]): string[] {
+  return args.filter((arg) => !flags.includes(arg))
+}
+
+function parseSubtitleTracks(metadata: unknown): SubtitleTrack[] {
+  if (!metadata || typeof metadata !== "object") return []
+  const record = metadata as Record<string, unknown>
+  const tracks: SubtitleTrack[] = []
+  const seen = new Set<string>()
+
+  const append = (value: unknown, source: SubtitleSource) => {
+    if (!value || typeof value !== "object") return
+    for (const language of Object.keys(value)) {
+      const normalized = language.trim()
+      if (!normalized) continue
+      const key = `${source}:${normalized}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      tracks.push({ language: normalized, source })
+    }
+  }
+
+  append(record.subtitles, "original")
+  append(record.automatic_captions, "generated")
+  return tracks.sort((a, b) => a.language.localeCompare(b.language) || a.source.localeCompare(b.source))
+}
+
+/** Query the current video's original and generated subtitle language codes. */
+export async function fetchAvailableSubtitles(url: string, toolchain: Toolchain): Promise<SubtitleTrack[]> {
+  if (!toolchain.ready || !toolchain.ytDlpPath) {
+    throw new Error(toolchain.diagnostics.join("；") || "外部工具链未准备完成")
+  }
+
+  const proc = Bun.spawn([
+    toolchain.ytDlpPath,
+    "--skip-download",
+    "--dump-single-json",
+    "--no-playlist",
+    "--no-warnings",
+    "--cookies-from-browser",
+    "chrome",
+    url,
+  ], {
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+    env: toolchainEnvironment(toolchain),
+  })
+
+  const [exitCode, stdoutBytes, stderrBytes] = await Promise.all([
+    proc.exited,
+    new Response(proc.stdout).arrayBuffer(),
+    new Response(proc.stderr).arrayBuffer(),
+  ])
+  const stdout = decodeToolText(new Uint8Array(stdoutBytes)).trim()
+  const stderr = decodeToolText(new Uint8Array(stderrBytes)).trim()
+
+  if (exitCode !== 0) {
+    throw new Error(stderr || `获取字幕列表失败，进程退出码 ${exitCode}`)
+  }
+
+  try {
+    return parseSubtitleTracks(JSON.parse(stdout))
+  } catch {
+    throw new Error("yt-dlp 返回的字幕列表不是有效 JSON")
+  }
+}
+
 /** 构建传给 yt-dlp 的完整参数列表 */
 export function buildArgs(opts: DownloadOptions, titleFile: string, toolchain?: Toolchain): string[] {
   let configArgs = loadConfigArgs()
@@ -137,6 +225,17 @@ export function buildArgs(opts: DownloadOptions, titleFile: string, toolchain?: 
     // 移除 config 里的视频预设（-t mp4 → --merge-output-format mp4 --remux-video mp4），
     // 否则 -x 提取出的 mp3 会被 remux 回 mp4。
     configArgs = stripFlagWithValue(configArgs, ["-t", "--preset-alias"])
+  }
+
+  if (opts.format === "subtitle") {
+    configArgs = stripFlags(configArgs, [
+      "--skip-download",
+      "--write-subs",
+      "--write-auto-subs",
+      "--list-subs",
+      "--embed-subs",
+    ])
+    configArgs = stripFlagWithValue(configArgs, ["--sub-langs", "--sub-format"])
   }
 
   const task = new YtTask(opts.url)
@@ -154,7 +253,7 @@ export function buildArgs(opts: DownloadOptions, titleFile: string, toolchain?: 
       "--print-to-file",
       "before_dl:%(title)s",
       titleFile,
-      ...formatArgs(opts.format),
+      ...formatArgs(opts),
       ...(toolchain?.ffmpegPath ? ["--ffmpeg-location", toolchain.ffmpegPath] : []),
       ...(opts.presetPath ? ["--config-locations", opts.presetPath] : []),
       "--print",

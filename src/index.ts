@@ -11,6 +11,7 @@ import { createSettingsFeature } from "./SettingsUI"
 import { ActionButtonRenderable, ConsolePanelRenderable, TabBarRenderable, writeAppConsole } from "./components"
 import { access, mkdir } from "node:fs/promises";
 import { resolveToolchain } from "./runtime/Toolchain"
+import { detectChrome } from "./runtime/Browser"
 
 import { 
   Configs,
@@ -66,6 +67,9 @@ try {
 }
 const consolePanel = new ConsolePanelRenderable(renderer, { enabled: appConfigs.console.enabled })
 
+const chrome = detectChrome()
+writeAppConsole(chrome.available ? "log" : "warn", `启动检测：Chrome = ${chrome.chromePath ?? "未找到"}`)
+
 // Resolve the host and all external binaries after the console exists, so the
 // startup lookup is visible in the app log just like a manual refresh.
 writeAppConsole("log", "启动检测：开始扫描工具路径（环境变量路径 + PATH）")
@@ -74,7 +78,7 @@ logToolchainResult("启动检测", toolchain)
 
 // 下载器（真实功能）
 const downloadHistory: DownloadHistoryFeature = createDownloadHistoryFeature(renderer)
-const downloader: Feature = createDownloaderFeature(renderer, toolchain, downloadHistory.refresh)
+const downloader: Feature = createDownloaderFeature(renderer, toolchain, downloadHistory.refresh, chrome.available)
 
 // 关于（占位）
 function createPlaceholderFeature(id: string, title: string, body: string): Feature {

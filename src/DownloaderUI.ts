@@ -16,12 +16,15 @@ import {
   StatusSelectRenderable,
   StyledSelectRenderable,
   TabBarRenderable,
+  SubtitleSelectionModalRenderable,
   writeAppConsole,
 } from "./components"
 import {
+  fetchAvailableSubtitles,
   startDownload,
   type DownloadOptions,
   type DownloadStatus,
+  type SubtitleTrack,
 } from "./downloader"
 import { getDefaultDownloadDirectory, revealInFileManager, type Toolchain } from "./runtime/Toolchain"
 import {
@@ -44,6 +47,8 @@ interface DownloadItem {
   error?: string
   outputPath?: string
   kill?: () => void
+  row?: BoxRenderable
+  progressBar?: ProgressBarRenderable
 }
 
 const ACCENT = RGBA.fromHex("#7FC7FF")
@@ -62,11 +67,14 @@ export function createDownloaderFeature(
   renderer: CliRenderer,
   toolchain: Toolchain,
   onHistoryChanged?: () => void,
+  chromeAvailable = false,
 ): DownloaderFeature {
   // The completed tab is session-only. Persistent records are shown in the
   // top-level Download History tab instead.
   const downloads: DownloadItem[] = []
   let activeTab: 0 | 1 | 2 = 0 // 0 = 下载中, 1 = 已完成, 2 = 未成功
+  let subtitleModal: SubtitleSelectionModalRenderable | null = null
+  let subtitleQuerying = false
 
   // -------------------------------------------------------------------------
   // 左侧：下载配置区
@@ -83,7 +91,7 @@ export function createDownloaderFeature(
     options: [
       { name: "mp4", description: "视频 MP4" },
       { name: "mp3", description: "仅音频 MP3" },
-      { name: "字幕", description: "仅下载字幕" },
+      ...(chromeAvailable ? [{ name: "字幕", description: "仅下载字幕" }] : []),
     ],
     selectedIndex: 0,
   })
@@ -229,6 +237,30 @@ export function createDownloaderFeature(
   root.add(leftPanel)
   root.add(rightPanel)
 
+  function closeSubtitleModal(): void {
+    if (!subtitleModal) return
+    root.remove(subtitleModal.id)
+    subtitleModal.destroy()
+    subtitleModal = null
+    urlInput.focus()
+  }
+
+  function showSubtitleModal(url: string, tracks: SubtitleTrack[]): void {
+    subtitleModal?.destroy()
+    subtitleModal = new SubtitleSelectionModalRenderable(renderer, {
+      id: "subtitle-selection-modal",
+      tracks,
+      onCancel: closeSubtitleModal,
+      onSubmit: (selectedTracks) => {
+        closeSubtitleModal()
+        void beginDownload(selectedTracks)
+      },
+    })
+    root.add(subtitleModal)
+    subtitleModal.getFocusables()[0]?.focus()
+    writeAppConsole("log", `[字幕] 已获取 ${tracks.length} 个可用字幕选项：${url}`)
+  }
+
   // -------------------------------------------------------------------------
   // 列表渲染
   // -------------------------------------------------------------------------
@@ -280,6 +312,7 @@ export function createDownloaderFeature(
         flexDirection: "column",
         alignItems: "center",
       })
+      item.row = row
       const titleText = new TextRenderable(renderer, {
         content: `${statusIcon} ${item.title || item.url}`,
         flexGrow: 1,
@@ -295,14 +328,17 @@ export function createDownloaderFeature(
       if (item.status === "downloading") {
         row.flexDirection = "row"
         row.justifyContent = "space-between"
-        row.add(new ProgressBarRenderable(renderer, {
+        const progressBar = new ProgressBarRenderable(renderer, {
           width: 20,
           percent: item.percent,
           label: `${item.speed || ""} ETA ${item.eta || "--"}`,
           truncate: true,
           selectable: false,
-        }))
+        })
+        item.progressBar = progressBar
+        row.add(progressBar)
       } else {
+        item.progressBar = undefined
         const status = item.status === "done"
           ? item.outputPath ? "[单击查看]" : "[完成]"
           : `[失败] ${item.error || ""}`
@@ -327,16 +363,50 @@ export function createDownloaderFeature(
   // 启动下载
   // -------------------------------------------------------------------------
 
-  function beginDownload() {
+  async function beginDownload(selectedSubtitleTracks?: SubtitleTrack[]) {
     const url = urlInput.value.trim()
     if (!url) return
 
     const selectedFormat = formatSelect.getSelectedOption()?.name
     const formatOpt = selectedFormat === "mp3" ? "mp3" : selectedFormat === "字幕" ? "subtitle" : "mp4"
+
+    if (formatOpt === "subtitle" && !chromeAvailable) {
+      writeAppConsole("error", "[字幕] 未检测到 Chrome，字幕下载选项不可用")
+      return
+    }
+
+    if (formatOpt === "subtitle" && !selectedSubtitleTracks) {
+      if (subtitleQuerying) return
+      subtitleQuerying = true
+      writeAppConsole("log", `[字幕] 正在获取可用字幕：${url}`)
+      try {
+        const tracks = await fetchAvailableSubtitles(url, toolchain)
+        if (tracks.length === 0) {
+          writeAppConsole("warn", `[字幕] 视频没有可用字幕：${url}`)
+          return
+        }
+        showSubtitleModal(url, tracks)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        writeAppConsole("error", `[字幕] 获取可用字幕失败：${message}`)
+      } finally {
+        subtitleQuerying = false
+      }
+      return
+    }
+
     const outDir = outDirInput.value.trim() || "~/Downloads"
     const extraRaw = extraArgsInput.value.trim()
     const extraArgs = extraRaw ? extraRaw.split(/\s+/).filter(Boolean) : []
     const presetPath = presetSelect.getSelectedOption()?.value ?? null
+    let subtitleFormat: DownloadOptions["subtitleFormat"]
+    if (formatOpt === "subtitle") {
+      try {
+        subtitleFormat = Configs.loadFromFileSync(resolve("yt-dlp-downloader/config.json")).subtitle.sub_format
+      } catch {
+        subtitleFormat = "vtt"
+      }
+    }
 
     const item: DownloadItem = {
       id: `dl-${Date.now()}`,
@@ -358,6 +428,12 @@ export function createDownloaderFeature(
       format: formatOpt as DownloadOptions["format"],
       outDir,
       extraArgs,
+      subtitleLanguages: selectedSubtitleTracks?.map((track) => track.language),
+      subtitleSources: selectedSubtitleTracks
+        ? [...new Set(selectedSubtitleTracks.map((track) => track.source))]
+        : undefined,
+      subtitleFormat,
+      useChromeCookies: formatOpt === "subtitle",
       presetPath,
     }
 
@@ -382,7 +458,12 @@ export function createDownloaderFeature(
         item.percent = p.percent
         item.speed = p.speed
         item.eta = p.eta
-        renderList()
+        if (item.progressBar) {
+          item.progressBar.percent = p.percent
+          item.progressBar.label = `${p.speed || ""} ETA ${p.eta || "--"}`
+        } else {
+          renderList()
+        }
       },
       onOutputPath: (path) => {
         // yt-dlp emits this from after_move, so the file has already reached
@@ -458,7 +539,7 @@ export function createDownloaderFeature(
 
   return {
     root,
-    getFocusables: () => focusables,
-    focusFirst: () => urlInput.focus(),
+    getFocusables: () => subtitleModal?.getFocusables() ?? focusables,
+    focusFirst: () => (subtitleModal?.getFocusables()[0] ?? urlInput).focus(),
   }
 }

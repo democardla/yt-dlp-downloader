@@ -7,69 +7,127 @@ import {
   RGBA,
 } from "@opentui/core"
 
+export interface MultiSelectItem {
+  name: string
+  description?: string
+}
+
+/** Keyboard- and mouse-friendly multi-select list. */
 export class MultiSelectRenderable extends Renderable {
-  private textRenderable: TextRenderable
-  private items: { name: string; description?: string }[]
+  private readonly itemRows: TextRenderable[] = []
+  private items: MultiSelectItem[]
   private selected: Set<number>
   private cursor: number
-  private onSubmit?: (indices: number[], items: { name: string; description?: string }[]) => void
+  private readonly onSubmit?: (indices: number[], items: MultiSelectItem[]) => void
+  private readonly onSelectionChange?: (indices: number[], items: MultiSelectItem[]) => void
+  private readonly onCursorChange?: (index: number) => void
 
   constructor(
     ctx: RenderContext,
     opts: RenderableOptions & {
-      items?: Array<string | { name: string; description?: string }>
+      items?: Array<string | MultiSelectItem>
       selected?: number[]
       cursor?: number
-      onSubmit?: (indices: number[], items: { name: string; description?: string }[]) => void
-    } = {}
+      onSubmit?: (indices: number[], items: MultiSelectItem[]) => void
+      onSelectionChange?: (indices: number[], items: MultiSelectItem[]) => void
+      onCursorChange?: (index: number) => void
+    } = {},
   ) {
-    const { items = [], selected = [], cursor = 0, onSubmit, ...rest } = opts
-    super(ctx, rest)
-    
-    this.items = items.map((it: any) =>
-      typeof it === "string" ? { name: it, description: "" } : { name: it.name, description: it.description }
-    )
-
-    this.selected = new Set(selected)
-    this.cursor = Math.max(0, Math.min(this.items.length - 1, cursor))
-    this.onSubmit = onSubmit
-    
-    // 创建内部的 TextRenderable
-    this.textRenderable = new TextRenderable(ctx, {})
-    this.add(this.textRenderable)
-    this.textRenderable.onMouseDown = () => this.toggleCurrent()
-    
-    // 设置为可聚焦的
-    this.focusable = true
-    this.updateContent()
-  }
-
-  private updateContent() {
-    const lines: string[] = []
-
-    this.items.forEach((it, idx) => {
-      const isSelected = this.selected.has(idx)
-      const isCursor = idx === this.cursor
-      const checkbox = isSelected ? "■" : "□"
-      const cursorMark = isCursor ? "> " : "  "
-
-      let line = `${cursorMark}${checkbox} ${it.name}`
-      if (it.description) {
-        line += ` - ${it.description}`
-      }
-      lines.push(line)
+    const {
+      items = [],
+      selected = [],
+      cursor = 0,
+      onSubmit,
+      onSelectionChange,
+      onCursorChange,
+      ...rest
+    } = opts
+    super(ctx, {
+      ...rest,
+      flexDirection: "column",
+      height: rest.height ?? Math.max(1, items.length),
     })
 
-    this.textRenderable.content = lines.join("\n")
+    this.items = this.normalizeItems(items)
+    this.selected = new Set(selected.filter((index) => index >= 0 && index < this.items.length))
+    this.cursor = this.clampIndex(cursor)
+    this.onSubmit = onSubmit
+    this.onSelectionChange = onSelectionChange
+    this.onCursorChange = onCursorChange
+    this.focusable = true
+    this.syncRows()
+  }
+
+  private normalizeItems(items: Array<string | MultiSelectItem>): MultiSelectItem[] {
+    return items.map((item) => typeof item === "string"
+      ? { name: item }
+      : { name: item.name, description: item.description })
+  }
+
+  private clampIndex(index: number): number {
+    return this.items.length === 0 ? 0 : Math.max(0, Math.min(this.items.length - 1, index))
+  }
+
+  private syncRows(): void {
+    while (this.itemRows.length > this.items.length) {
+      const row = this.itemRows.pop()
+      if (row) this.remove(row.id)
+    }
+
+    while (this.itemRows.length < this.items.length) {
+      const index = this.itemRows.length
+      const row = new TextRenderable(this.ctx, {
+        id: `multi-select-item-${index}`,
+        height: 1,
+        width: "100%",
+        selectable: false,
+        wrapMode: "none",
+        truncate: true,
+      })
+      row.onMouseDown = () => {
+        this.setCursor(index)
+        this.toggleCurrent()
+      }
+      this.itemRows.push(row)
+      this.add(row)
+    }
+
+    this.height = Math.max(1, this.items.length)
+    this.updateRows()
+  }
+
+  private updateRows(): void {
+    this.itemRows.forEach((row, index) => {
+      const item = this.items[index]
+      if (!item) return
+      const isSelected = this.selected.has(index)
+      const isCursor = index === this.cursor
+      const cursorMark = isCursor ? "▸ " : "  "
+      const checkbox = isSelected ? "■" : "□"
+      const description = item.description ? `  ${item.description}` : ""
+      row.content = `${cursorMark}${checkbox} ${item.name}${description}`
+      row.fg = isCursor ? RGBA.fromHex("#FFFFFF") : RGBA.fromHex("#D1D5DB")
+      row.bg = isCursor
+        ? RGBA.fromInts(55, 150, 220, 150)
+        : isSelected
+          ? RGBA.fromInts(55, 150, 220, 80)
+          : RGBA.fromInts(0, 0, 0, 0)
+    })
     this.requestRender()
+  }
+
+  private emitSelectionChange(): void {
+    this.onSelectionChange?.(this.getSelectedIndices(), this.getSelectedItems())
   }
 
   override handleKeyPress(key: KeyEvent): boolean {
     switch (key.name) {
       case "up":
+      case "k":
         this.prev()
         return true
       case "down":
+      case "j":
         this.next()
         return true
       case "space":
@@ -89,91 +147,79 @@ export class MultiSelectRenderable extends Renderable {
     }
   }
 
-  setItems(items: Array<string | { name: string; description?: string }>) {
-    this.items = items.map((it: any) =>
-      typeof it === "string" ? { name: it, description: "" } : { name: it.name, description: it.description }
-    )
-
-    const validIndices = new Set<number>()
-    this.selected.forEach((idx) => {
-      if (idx < this.items.length) {
-        validIndices.add(idx)
-      }
-    })
-    this.selected = validIndices
-
-    if (this.cursor >= this.items.length) {
-      this.cursor = Math.max(0, this.items.length - 1)
-    }
-
-    this.updateContent()
+  setItems(items: Array<string | MultiSelectItem>): void {
+    this.items = this.normalizeItems(items)
+    this.selected = new Set([...this.selected].filter((index) => index < this.items.length))
+    this.cursor = this.clampIndex(this.cursor)
+    this.syncRows()
   }
 
-  setCursor(idx: number) {
-    this.cursor = Math.max(0, Math.min(this.items.length - 1, idx))
-    this.updateContent()
+  setCursor(index: number): void {
+    this.cursor = this.clampIndex(index)
+    this.updateRows()
+    this.onCursorChange?.(this.cursor)
   }
 
-  next() {
-    this.cursor = (this.cursor + 1) % this.items.length
-    this.updateContent()
+  getCursor(): number {
+    return this.cursor
   }
 
-  prev() {
-    this.cursor = this.cursor - 1
-    if (this.cursor < 0) {
-      this.cursor = this.items.length - 1
-    }
-    this.updateContent()
+  next(): void {
+    if (this.items.length === 0) return
+    this.setCursor((this.cursor + 1) % this.items.length)
   }
 
-  toggleCurrent() {
-    if (this.selected.has(this.cursor)) {
-      this.selected.delete(this.cursor)
-    } else {
-      this.selected.add(this.cursor)
-    }
-    this.updateContent()
+  prev(): void {
+    if (this.items.length === 0) return
+    this.setCursor((this.cursor - 1 + this.items.length) % this.items.length)
   }
 
-  select(index: number) {
+  toggleCurrent(): void {
+    if (this.items.length === 0) return
+    if (this.selected.has(this.cursor)) this.selected.delete(this.cursor)
+    else this.selected.add(this.cursor)
+    this.updateRows()
+    this.emitSelectionChange()
+  }
+
+  select(index: number): void {
     if (index >= 0 && index < this.items.length) {
       this.selected.add(index)
-      this.updateContent()
+      this.updateRows()
+      this.emitSelectionChange()
     }
   }
 
-  deselect(index: number) {
+  deselect(index: number): void {
     this.selected.delete(index)
-    this.updateContent()
+    this.updateRows()
+    this.emitSelectionChange()
   }
 
-  selectAll() {
-    this.selected = new Set(this.items.map((_, idx) => idx))
-    this.updateContent()
+  selectAll(): void {
+    this.selected = new Set(this.items.map((_, index) => index))
+    this.updateRows()
+    this.emitSelectionChange()
   }
 
-  clearSelection() {
-    this.selected = new Set()
-    this.updateContent()
+  clearSelection(): void {
+    this.selected.clear()
+    this.updateRows()
+    this.emitSelectionChange()
   }
 
   getSelectedIndices(): number[] {
     return Array.from(this.selected).sort((a, b) => a - b)
   }
 
-  getSelectedItems(): { name: string; description?: string }[] {
-    return this.getSelectedIndices().map((idx) => this.items[idx]!)
+  getSelectedItems(): MultiSelectItem[] {
+    return this.getSelectedIndices().map((index) => this.items[index]!).filter(Boolean)
   }
 
-  submit() {
+  submit(): { indices: number[]; items: MultiSelectItem[] } {
     const indices = this.getSelectedIndices()
     const items = this.getSelectedItems()
-    if (this.onSubmit) {
-      this.onSubmit(indices, items)
-    }
+    this.onSubmit?.(indices, items)
     return { indices, items }
   }
 }
-
-// 用法：创建实例后把它添加到 renderer.root 中，使用 next()/prev()/toggleCurrent() 控制选择。
