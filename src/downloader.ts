@@ -192,6 +192,20 @@ function parseSubtitleTracks(metadata: unknown): SubtitleTrack[] {
   return tracks.sort((a, b) => a.language.localeCompare(b.language) || a.source.localeCompare(b.source))
 }
 
+/**
+ * --list-subs writes a human-readable table before --dump-single-json writes
+ * its machine-readable payload. Extract the final JSON object instead of
+ * requiring stdout to contain JSON only.
+ */
+function parseSubtitleMetadataOutput(stdout: string): unknown {
+  const lines = stdout.split(/\r?\n/)
+  for (let index = lines.length - 1; index >= 0; index--) {
+    if (!lines[index]!.trimStart().startsWith("{")) continue
+    return JSON.parse(lines.slice(index).join("\n").trim())
+  }
+  throw new Error("yt-dlp 输出中没有字幕元数据 JSON")
+}
+
 /** Query the current video's original and generated subtitle language codes. */
 export async function fetchAvailableSubtitles(url: string, toolchain: Toolchain): Promise<SubtitleTrack[]> {
   if (!toolchain.ready || !toolchain.ytDlpPath) {
@@ -200,6 +214,10 @@ export async function fetchAvailableSubtitles(url: string, toolchain: Toolchain)
 
   const args = [
     "--skip-download",
+    // Bilibili lazily fetches subtitle metadata only when subtitle listing is
+    // explicitly requested. Without this flag dump-single-json can report an
+    // empty subtitles object even though `yt-dlp --list-subs` finds tracks.
+    "--list-subs",
     "--dump-single-json",
     "--no-playlist",
     "--no-warnings",
@@ -230,9 +248,10 @@ export async function fetchAvailableSubtitles(url: string, toolchain: Toolchain)
   }
 
   try {
-    return parseSubtitleTracks(JSON.parse(stdout))
-  } catch {
-    throw new Error("yt-dlp 返回的字幕列表不是有效 JSON")
+    return parseSubtitleTracks(parseSubtitleMetadataOutput(stdout))
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`yt-dlp 返回的字幕列表无法解析：${message}`)
   }
 }
 
