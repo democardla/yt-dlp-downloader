@@ -60,7 +60,10 @@ export interface VideoFormatShape {
   check_formats?: boolean
 }
 
-export interface ConsoleShape { enabled?: boolean }
+export interface ConsoleShape {
+  enabled?: boolean
+  truncate?: boolean
+}
 
 export interface ConfigsJSON {
   name?: string

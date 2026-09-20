@@ -1,7 +1,7 @@
 import { BoxRenderable, InputRenderable, InputRenderableEvents, ScrollBoxRenderable, TextRenderable, RGBA, type CliRenderer, type Renderable } from "@opentui/core"
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
-import { setAppConsoleEnabled, SidebarNavRenderable, StatusSelectRenderable } from "./components"
+import { setAppConsoleEnabled, setAppConsoleTruncate, SidebarNavRenderable, StatusSelectRenderable } from "./components"
 import { Configs, formatSortToString, type DownloadNetworkConfig, type FormatSort, type OutputConfig, type SubtitleConfig, type VideoFormatConfig } from "./handles"
 import { getDefaultDownloadDirectory } from "./runtime/Toolchain"
 
@@ -9,7 +9,7 @@ import { getDefaultDownloadDirectory } from "./runtime/Toolchain"
 const CONFIG_PATH = resolve("yt-dlp-downloader/config.json")
 type ConfigSection = "downloadNetwork" | "output" | "subtitle" | "videoFormat" | "console"
 type ConfigValue = string | number | boolean | null
-type ConfigObject = DownloadNetworkConfig | OutputConfig | SubtitleConfig | VideoFormatConfig | { enabled: boolean }
+type ConfigObject = DownloadNetworkConfig | OutputConfig | SubtitleConfig | VideoFormatConfig | { enabled: boolean; truncate: boolean }
 type SettingType = "toggle" | "select" | "input"
 
 interface SettingItemDef {
@@ -55,6 +55,7 @@ const SCHEMA: SettingsCategoryDef[] = [
   ] },
   { name: " 控制台 ", description: "底部运行日志显示", items: [
     { section: "console", property: "enabled", type: "toggle", label: "启用底部控制台" },
+    { section: "console", property: "truncate", type: "toggle", label: "截断过长日志" },
   ] },
 ]
 
@@ -128,6 +129,7 @@ function setConfigValue(configs: Configs, item: SettingItemDef, value: ConfigVal
   section[item.property] = value
   configs.saveToFileSync(CONFIG_PATH)
   if (item.section === "console" && item.property === "enabled") setAppConsoleEnabled(value === true)
+  if (item.section === "console" && item.property === "truncate") setAppConsoleTruncate(value === true)
 }
 
 export function createSettingsFeature(renderer: CliRenderer): SettingsFeature {

@@ -39,6 +39,7 @@
     "check_formats": false
   },
   "console": {
-    "enabled": true
+    "enabled": true,
+    "truncate": false
   }
 }

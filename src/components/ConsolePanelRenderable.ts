@@ -4,9 +4,10 @@ let activePanel: ConsolePanelRenderable | null = null
 
 export class ConsolePanelRenderable extends BoxRenderable {
   private readonly scroll: ScrollBoxRenderable
-  private readonly lines: BoxRenderable[] = []
+  private readonly lines: Array<{ container: BoxRenderable; body: TextRenderable }> = []
+  private truncate = false
 
-  constructor(renderer: CliRenderer, options: { height?: number; enabled?: boolean } = {}) {
+  constructor(renderer: CliRenderer, options: { height?: number; enabled?: boolean; truncate?: boolean } = {}) {
     super(renderer, {
       id: "app-console",
       height: options.height ?? 7,
@@ -17,6 +18,7 @@ export class ConsolePanelRenderable extends BoxRenderable {
       paddingX: 1,
       visible: options.enabled ?? true,
     })
+    this.truncate = options.truncate ?? false
     this.scroll = new ScrollBoxRenderable(renderer, {
       flexGrow: 1,
       scrollY: true,
@@ -46,10 +48,8 @@ export class ConsolePanelRenderable extends BoxRenderable {
       content: ` ${message}`,
       flexGrow: 1,
       selectable: false,
-      // Keep the complete command/error text. Long lines occupy additional
-      // terminal rows instead of being replaced with an ellipsis.
-      wrapMode: "char",
-      truncate: false,
+      wrapMode: this.truncate ? "none" : "char",
+      truncate: this.truncate,
       fg: RGBA.fromHex("#9CA3AF"),
     })
     const line = new BoxRenderable(this.ctx, {
@@ -59,13 +59,22 @@ export class ConsolePanelRenderable extends BoxRenderable {
     })
     line.add(label)
     line.add(body)
-    this.lines.push(line)
+    this.lines.push({ container: line, body })
     this.scroll.add(line)
     if (this.lines.length > 500) {
       const oldest = this.lines.shift()
-      if (oldest) this.scroll.remove(oldest.id)
+      if (oldest) this.scroll.remove(oldest.container.id)
     }
     this.scroll.scrollTo({ x: 0, y: this.scroll.scrollHeight })
+    this.requestRender()
+  }
+
+  public setTruncate(truncate: boolean): void {
+    this.truncate = truncate
+    for (const line of this.lines) {
+      line.body.wrapMode = truncate ? "none" : "char"
+      line.body.truncate = truncate
+    }
     this.requestRender()
   }
 
@@ -73,4 +82,5 @@ export class ConsolePanelRenderable extends BoxRenderable {
 }
 
 export function setAppConsoleEnabled(enabled: boolean): void { activePanel?.setEnabled(enabled) }
+export function setAppConsoleTruncate(truncate: boolean): void { activePanel?.setTruncate(truncate) }
 export function writeAppConsole(level: "log" | "warn" | "error", message: string): void { activePanel?.append(level, message) }

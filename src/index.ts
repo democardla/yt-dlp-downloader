@@ -65,7 +65,10 @@ try {
 } catch {
   appConfigs = new Configs()
 }
-const consolePanel = new ConsolePanelRenderable(renderer, { enabled: appConfigs.console.enabled })
+const consolePanel = new ConsolePanelRenderable(renderer, {
+  enabled: appConfigs.console.enabled,
+  truncate: appConfigs.console.truncate,
+})
 
 const chrome = detectChrome()
 writeAppConsole(chrome.available ? "log" : "warn", `启动检测：Chrome = ${chrome.chromePath ?? "未找到"}`)
