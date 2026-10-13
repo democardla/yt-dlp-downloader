@@ -136,7 +136,7 @@ bun build --compile \
 
 ## 构建跨平台 App（Beta）
 
-发布构建会把 OpenTUI 主程序和对应平台的工具一起组装。先将三个独立可执行文件放入目标目录：
+发布构建会把 OpenTUI 主程序和对应平台的工具一起组装。工具二进制不提交到 Git；构建时如果目标目录没有完整工具，程序会根据 `bin/<平台-架构>/manifest.json` 从 GitHub Release 下载并校验 SHA-256。也可以提前运行：
 
 ```text
 bin/win32-x64/     # ffmpeg.exe、ffprobe.exe、yt-dlp.exe
@@ -149,6 +149,7 @@ bin/linux-x64/     # ffmpeg、ffprobe、yt-dlp
 
 ```bash
 bun run verify:bin --target win32-x64
+bun run prepare:tools -- --target win32-x64
 ```
 
 构建对应平台应用包：

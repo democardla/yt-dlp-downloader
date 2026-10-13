@@ -10,6 +10,7 @@ import {
 } from "node:fs"
 import { basename, dirname, join, resolve } from "node:path"
 import { targetArgument, verifyTargetBinaries, type ReleaseTarget } from "./release-targets"
+import { ensureTargetBinaries } from "./prepare-tools"
 
 interface PackageLayout {
   packageRoot: string
@@ -113,8 +114,12 @@ function packagePlatformFiles(target: ReleaseTarget, layout: PackageLayout, vers
   writeFileSync(join(layout.packageRoot, "portable.flag"), "portable\n", "utf8")
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const target = targetArgument()
+  // The executable files are intentionally not tracked by Git. Prepare them
+  // from the target's GitHub Release before packaging when the local cache is
+  // missing or fails the manifest checksum.
+  await ensureTargetBinaries(target)
   const packageJson = JSON.parse(readFileSync(resolve("package.json"), "utf8")) as { version?: string }
   const version = packageJson.version ?? "0.0.0"
   const layout = packageLayout(target)
@@ -144,7 +149,7 @@ function main(): void {
 }
 
 try {
-  main()
+  await main()
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error))
   process.exitCode = 1
