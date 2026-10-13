@@ -162,6 +162,14 @@ bun run build:app:linux
 
 生成结果位于 `dist/apps/<平台-架构>/`。Windows 生成可双击运行的控制台应用目录；macOS 生成 `.app`；Linux 生成可继续交给 `appimagetool` 的 `AppDir`。实际发布时应在目标操作系统的原生构建环境中执行相应命令。
 
+Windows 安装包需要先安装 Inno Setup 6，然后运行：
+
+```powershell
+bun run build:installer:windows
+```
+
+安装包生成到 `dist/installers/`。安装版会自动创建开始菜单快捷方式，并可在安装过程中选择创建桌面快捷方式。安装版不携带 `portable.flag`，配置和下载历史保存到 `%APPDATA%\YT-DLP Downloader`；卸载程序文件时会保留这些用户数据。
+
 发布包可以使用以下非交互命令进行检查：
 
 ```bash

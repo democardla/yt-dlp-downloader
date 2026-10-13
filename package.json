@@ -11,6 +11,7 @@
     "build": "bun build --compile ./src/index.ts --outfile ./dist/yt-dlp-downloader",
     "build:app": "bun run scripts/build-app.ts",
     "build:app:windows": "bun run scripts/build-app.ts --target win32-x64",
+    "build:installer:windows": "bun run scripts/build-installer.ts",
     "build:app:macos:x64": "bun run scripts/build-app.ts --target darwin-x64",
     "build:app:macos:arm64": "bun run scripts/build-app.ts --target darwin-arm64",
     "build:app:linux": "bun run scripts/build-app.ts --target linux-x64",
