@@ -5,7 +5,9 @@ import { Configs, formatSortToString, type DownloadNetworkConfig, type FormatSor
 import { getDefaultDownloadDirectory } from "../runtime/Toolchain"
 import { getAppPaths } from "../runtime/AppPaths"
 
-const CONFIG_PATH = getAppPaths().configFile
+function configPath(): string {
+  return getAppPaths().configFile
+}
 type ConfigSection = "general" | "downloadNetwork" | "output" | "subtitle" | "videoFormat" | "console"
 type ConfigValue = string | number | boolean | null
 type ConfigObject = GeneralConfig | DownloadNetworkConfig | OutputConfig | SubtitleConfig | VideoFormatConfig | { enabled: boolean; truncate: boolean }
@@ -79,26 +81,27 @@ function parseFormatSort(value: string | null): Partial<FormatSort> {
 }
 
 function loadConfigs(): Configs {
-  if (!existsSync(CONFIG_PATH)) {
+  const path = configPath()
+  if (!existsSync(path)) {
     const configs = new Configs()
     configs.output.path = getDefaultDownloadDirectory()
-    configs.saveToFileSync(CONFIG_PATH)
+    configs.saveToFileSync(path)
     return configs
   }
   try {
-    const configs = Configs.loadFromFileSync(CONFIG_PATH)
+    const configs = Configs.loadFromFileSync(path)
     // Migrate the old platform-neutral default without touching a user's
     // explicitly chosen directory.
     if (!configs.output.path || configs.output.path === "~/Downloads") {
       configs.output.path = getDefaultDownloadDirectory()
-      configs.saveToFileSync(CONFIG_PATH)
+      configs.saveToFileSync(path)
     }
     return configs
   } catch (error) {
     console.error(`配置文件读取失败，将使用默认配置: ${String(error)}`)
     const configs = new Configs()
     configs.output.path = getDefaultDownloadDirectory()
-    configs.saveToFileSync(CONFIG_PATH)
+    configs.saveToFileSync(path)
     return configs
   }
 }
@@ -114,22 +117,23 @@ function getConfigValue(configs: Configs, item: SettingItemDef, formatSortFields
 }
 
 function setConfigValue(configs: Configs, item: SettingItemDef, value: ConfigValue, formatSortFields: Partial<FormatSort>): void {
+  const path = configPath()
   if (item.formatSortField) {
     if (value === null || value === "") delete formatSortFields[item.formatSortField]
     else formatSortFields[item.formatSortField] = value as never
     configs.videoFormat.format_sort = formatSortToString(formatSortFields)
-    configs.saveToFileSync(CONFIG_PATH)
+    configs.saveToFileSync(path)
     return
   }
   if (item.section === "subtitle" && item.property === "subtitleMode") {
     configs.subtitle.write_subs = value !== "none"
     configs.subtitle.write_auto_subs = value === "generated"
-    configs.saveToFileSync(CONFIG_PATH)
+    configs.saveToFileSync(path)
     return
   }
   const section = configs[item.section] as unknown as Record<string, ConfigValue>
   section[item.property] = value
-  configs.saveToFileSync(CONFIG_PATH)
+  configs.saveToFileSync(path)
   if (item.section === "console" && item.property === "enabled") setAppConsoleEnabled(value === true)
   if (item.section === "console" && item.property === "truncate") setAppConsoleTruncate(value === true)
 }

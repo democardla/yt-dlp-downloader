@@ -3,5 +3,4 @@ APPDIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 RESOURCES_PATH="$APPDIR/usr/lib/yt-dlp-downloader"
 export YTDLP_DOWNLOADER_PACKAGED=1
 export YTDLP_DOWNLOADER_RESOURCES="$RESOURCES_PATH"
-export YTDLP_DOWNLOADER_BIN="$RESOURCES_PATH/bin"
 exec "$APPDIR/usr/bin/yt-dlp-downloader" "$@"

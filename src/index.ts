@@ -18,6 +18,7 @@ import { resolveToolchain } from "./runtime/Toolchain"
 import { detectChrome } from "./runtime/Browser"
 import { getAppPaths, initializeAppPaths } from "./runtime/AppPaths"
 import { handleCliCommand } from "./runtime/CliCommands"
+import { ensureMinimumTerminalSize } from "./runtime/Terminal"
 
 import { Configs } from "./handles"
 
@@ -29,17 +30,41 @@ import "reflect-metadata"
 const appPaths = getAppPaths()
 const cliExitCode = await handleCliCommand(Bun.argv.slice(2), appPaths)
 if (cliExitCode !== null) process.exit(cliExitCode)
+const terminalPreparation = await ensureMinimumTerminalSize()
 const migrationActions = initializeAppPaths(appPaths)
 
 // ---------------------------------------------------------------------------
 // 渲染器
 // ---------------------------------------------------------------------------
 
+const initialRendererSize = terminalPreparation.resized
+  ? {
+      width: terminalPreparation.targetColumns,
+      height: terminalPreparation.targetRows,
+    }
+  : {}
+
 const renderer = await createCliRenderer({
+  ...initialRendererSize,
   exitOnCtrlC: true,
   useMouse: true,      // 启用鼠标输入
   autoFocus: true,     // 点击时自动聚焦
 })
+
+// OpenTUI asks the terminal for its real viewport after initialization. On
+// Windows that reply can arrive just after mode.com has resized the console.
+// Keep the screen empty briefly instead of mounting an incorrectly compressed
+// 80x25 layout and then visibly reflowing it.
+if (terminalPreparation.resized) {
+  const viewportDeadline = Date.now() + 1_000
+  while (
+    (renderer.width < terminalPreparation.targetColumns
+      || renderer.height < terminalPreparation.targetRows)
+    && Date.now() < viewportDeadline
+  ) {
+    await Bun.sleep(25)
+  }
+}
 
 // ---------------------------------------------------------------------------
 // 功能模块
@@ -68,6 +93,17 @@ writeAppConsole("log", `启动路径：模式=${appPaths.mode}，目标=${appPat
 writeAppConsole("log", `启动路径：bin=${appPaths.binDir}`)
 writeAppConsole("log", `启动路径：配置=${appPaths.configFile}`)
 writeAppConsole("log", `启动路径：历史=${appPaths.historyFile}`)
+if (terminalPreparation.attempted) {
+  writeAppConsole(
+    terminalPreparation.resized ? "log" : "warn",
+    terminalPreparation.resized
+      ? "终端布局：已将 Windows 控制台调整到至少 120 × 35"
+      : "终端布局：自动调整失败，请将窗口扩大到至少 120 × 35",
+  )
+}
+if (renderer.width < 100 || renderer.height < 28) {
+  writeAppConsole("warn", `终端空间不足：当前 ${renderer.width} × ${renderer.height}，建议至少 120 × 35`)
+}
 for (const action of migrationActions) {
   writeAppConsole("log", `数据迁移：${action}`)
 }
@@ -77,7 +113,7 @@ writeAppConsole(chrome.available ? "log" : "warn", `启动检测：Chrome = ${ch
 
 // Resolve the host and all external binaries after the console exists, so the
 // startup lookup is visible in the app log just like a manual refresh.
-writeAppConsole("log", "启动检测：开始扫描工具路径（应用 bin + 环境变量路径 + PATH）")
+writeAppConsole("log", "启动检测：只检查应用 bin 目录")
 const toolchain = await resolveToolchain(appPaths)
 logToolchainResult("启动检测", toolchain)
 

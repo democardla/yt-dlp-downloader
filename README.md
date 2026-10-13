@@ -40,7 +40,7 @@
 - 历史表格展示文件名、来源、文件状态和处理时间，单击记录即可定位文件。
 - “下载器 → 已完成”只显示当前运行期间完成的任务；跨会话记录统一在“历史”页面查看。
 - 启动时检测 Chrome，以及 `ffmpeg`、`ffprobe`、`yt-dlp` 三个外部工具。
-- 任意工具缺失时，顶部显示“刷新工具”按钮，可在修改 PATH 后重新扫描。
+- 任意工具缺失时，顶部显示“刷新工具”按钮；补齐应用 `bin` 目录后可重新检查。
 - 支持底部控制台日志、长日志截断和可滚动设置界面。
 - 使用自定义 OpenTUI 组件实现文件表格、拖拽输入、矩阵选择器、标签页、侧边栏、进度条和控制台。
 
@@ -52,17 +52,9 @@
 - `ffprobe`
 - Chrome（可选，仅字幕查询和字幕下载需要）
 
-程序启动时会依次检查应用自带的 `bin` 目录、对应环境变量和系统 `PATH`。Windows 会自动尝试 `.exe`、`.cmd` 和 `.bat` 后缀。
+程序只检查应用自带的 `bin` 目录，不再读取工具路径环境变量，也不会从系统 `PATH` 搜索 `ffmpeg`、`ffprobe` 或 `yt-dlp`。Windows 会在应用目录的 `bin` 中查找对应的 `.exe` 文件。
 
-可用的工具路径环境变量包括 `FFMPEG_PATH`、`FFPROBE_PATH` 和 `YTDLP_PATH`；同时兼容项目中定义的 `*_BINARY`、`*_BIN` 等别名。
-
-也可以将三个二进制文件所在目录加入 `PATH`，例如：
-
-```powershell
-$env:Path = "C:\path\to\tools;$env:Path"
-```
-
-启动时如果任意一个工具缺失，顶部标签栏最右侧会显示“刷新工具”按钮；修改 PATH 或对应环境变量后点击该按钮即可重新检查。
+启动时如果任意一个工具缺失，顶部标签栏最右侧会显示“刷新工具”按钮；补齐或替换 `bin` 中的文件后点击该按钮即可重新检查。
 
 ## 界面使用
 
@@ -196,7 +188,7 @@ yt-dlp-downloader/config.json
 - macOS：`~/Library/Application Support/YT-DLP Downloader/`
 - Linux：`$XDG_CONFIG_HOME/yt-dlp-downloader/` 和 `$XDG_DATA_HOME/yt-dlp-downloader/`
 
-首次运行打包应用时，如果启动目录下存在旧版 `yt-dlp-downloader` 数据目录，程序会迁移尚未存在的配置、历史和 `.pre` 文件。设置 `YTDLP_DOWNLOADER_PORTABLE=1` 可让打包应用改用程序旁边的 `user-data` 目录。
+首次运行打包应用时，如果启动目录下存在旧版 `yt-dlp-downloader` 数据目录，程序会迁移尚未存在的配置、历史和 `.pre` 文件。Windows 便携包包含 `portable.flag`，默认把数据写入程序旁边的 `user-data`；安装版可移除该标记并使用系统用户数据目录。
 
 配置文件包含：
 

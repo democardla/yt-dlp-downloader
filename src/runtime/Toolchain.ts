@@ -18,18 +18,9 @@ export interface Toolchain {
 }
 
 const TOOL_DEFINITIONS = {
-  ffmpeg: {
-    names: ["ffmpeg"],
-    envKeys: ["FFMPEG_PATH", "FFMPEG_BINARY", "FFMPEG_BIN", "FFMPEG"],
-  },
-  ffprobe: {
-    names: ["ffprobe"],
-    envKeys: ["FFPROBE_PATH", "FFPROBE_BINARY", "FFPROBE_BIN", "FFPROBE"],
-  },
-  ytDlp: {
-    names: ["yt-dlp", "ytdlp"],
-    envKeys: ["YTDLP_PATH", "YTDLP_BINARY", "YTDLP_BIN", "YTDLP", "YT_DLP"],
-  },
+  ffmpeg: { names: ["ffmpeg"] },
+  ffprobe: { names: ["ffprobe"] },
+  ytDlp: { names: ["yt-dlp"] },
 } as const
 
 function getOperatingSystem(platform: NodeJS.Platform): HostOperatingSystem {
@@ -40,23 +31,11 @@ function getOperatingSystem(platform: NodeJS.Platform): HostOperatingSystem {
   return "other"
 }
 
-function getEnvironmentValue(keys: readonly string[]): string | null {
-  const environment = process.env
-  for (const key of keys) {
-    const actualKey = Object.keys(environment).find(
-      (candidate) => candidate.toLowerCase() === key.toLowerCase(),
-    )
-    const value = actualKey ? environment[actualKey] : undefined
-    if (value?.trim()) return value.trim().replace(/^['"]|['"]$/g, "")
-  }
-  return null
-}
-
 function isExecutableFile(filePath: string): boolean {
   try {
     if (!statSync(filePath).isFile()) return false
-    // Windows does not use Unix execute bits. The extension is checked by the
-    // PATH candidate builder below, while existence is sufficient here.
+    // Windows does not use Unix execute bits. The bundled-bin candidate
+    // builder checks the extension, while existence is sufficient here.
     if (process.platform === "win32") return true
     accessSync(filePath, constants.X_OK)
     return true
@@ -77,104 +56,6 @@ function candidateNames(names: readonly string[]): string[] {
   if (process.platform !== "win32") return [...names]
   const extensions = [".exe", ".cmd", ".bat", ""]
   return names.flatMap((name) => extensions.map((extension) => `${name}${extension}`))
-}
-
-function resolveCandidate(value: string | null, names: readonly string[]): string | null {
-  if (!value) return null
-  const expanded = value.startsWith("~/")
-    ? join(process.env.HOME ?? process.env.USERPROFILE ?? "", value.slice(2))
-    : value
-  const absolute = resolve(expanded)
-  if (isExecutableFile(absolute)) return absolute
-
-  // An environment variable may point to the containing directory instead of
-  // the binary itself.
-  for (const name of candidateNames(names)) {
-    const path = join(absolute, name)
-    if (isExecutableFile(path)) return path
-  }
-  return null
-}
-
-function splitPathValues(values: readonly string[]): string[] {
-  return [...new Set(values
-    .flatMap((value) => value.split(delimiter))
-    .map((directory) => directory.trim().replace(/^['"]|['"]$/g, ""))
-    .filter(Boolean))]
-}
-
-async function getPathDirectories(): Promise<string[]> {
-  const processPath = getEnvironmentValue(["PATH"])
-
-  if (process.platform === "darwin") {
-    const shellPath = getEnvironmentValue(["SHELL"]) ?? "/bin/zsh"
-    const shellPathValue = await readPathFromShell(shellPath)
-    return splitPathValues([
-      ...(processPath ? [processPath] : []),
-      ...(shellPathValue ? [shellPathValue] : []),
-    ])
-  }
-
-  if (process.platform !== "win32") {
-    return splitPathValues(processPath ? [processPath] : [])
-  }
-
-  // Windows processes keep a startup snapshot of PATH. Read the current user
-  // and machine values so refresh can see PATH edits made while the app runs.
-  try {
-    const powershell = Bun.spawn([
-      "powershell.exe",
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      "$paths = @([Environment]::GetEnvironmentVariable('Path', 'Machine'), [Environment]::GetEnvironmentVariable('Path', 'User')); $paths | ForEach-Object { if ($_){ [Environment]::ExpandEnvironmentVariables($_) } } | ConvertTo-Json -Compress",
-    ], {
-      stdin: "ignore",
-      stdout: "pipe",
-      stderr: "ignore",
-    })
-    const [exitCode, stdout] = await Promise.all([
-      powershell.exited,
-      new Response(powershell.stdout).text(),
-    ])
-
-    if (exitCode === 0 && stdout.trim()) {
-      const values = JSON.parse(stdout.trim()) as string | string[]
-      return splitPathValues([
-        ...(processPath ? [processPath] : []),
-        ...(Array.isArray(values) ? values : [values]),
-      ])
-    }
-  } catch {
-    // Fall back to the startup snapshot if the live environment is unavailable.
-  }
-
-  return splitPathValues(processPath ? [processPath] : [])
-}
-
-async function readPathFromShell(shellPath: string): Promise<string | null> {
-  const startMarker = "__YT_DLP_PATH_START__"
-  const endMarker = "__YT_DLP_PATH_END__"
-
-  try {
-    const shell = Bun.spawn([shellPath, "-lc", `printf '%s%s%s' '${startMarker}' "$PATH" '${endMarker}'`], {
-      stdin: "ignore",
-      stdout: "pipe",
-      stderr: "ignore",
-    })
-    const [exitCode, stdout] = await Promise.all([
-      shell.exited,
-      new Response(shell.stdout).text(),
-    ])
-    if (exitCode !== 0) return null
-
-    const start = stdout.indexOf(startMarker)
-    const end = stdout.indexOf(endMarker, start + startMarker.length)
-    if (start < 0 || end < 0) return null
-    return stdout.slice(start + startMarker.length, end)
-  } catch {
-    return null
-  }
 }
 
 function resolveFromDirectories(names: readonly string[], directories: readonly string[]): string | null {
@@ -228,49 +109,17 @@ export function normalizeFilePath(filePath: string): string {
   return resolve(value)
 }
 
-function getConfiguredDirectories(): string[] {
-  const values = [
-    getEnvironmentValue(TOOL_DEFINITIONS.ffmpeg.envKeys),
-    getEnvironmentValue(TOOL_DEFINITIONS.ffprobe.envKeys),
-    getEnvironmentValue(TOOL_DEFINITIONS.ytDlp.envKeys),
-  ].filter((value): value is string => Boolean(value))
-
-  return values.map((value) => {
-    const expanded = value.startsWith("~/")
-      ? join(process.env.HOME ?? process.env.USERPROFILE ?? "", value.slice(2))
-      : value
-    const absolute = resolve(expanded)
-    return isExecutableFile(absolute) ? dirname(absolute) : absolute
-  })
-}
-
-async function resolveTool(
-  names: readonly string[],
-  envKeys: readonly string[],
-  bundledDirectories: readonly string[],
-  pathDirectories: readonly string[],
-): Promise<string | null> {
-  // Packaged applications are self-contained. Explicit overrides and PATH
-  // remain available for development and recovery from a damaged package.
-  return resolveFromDirectories(names, bundledDirectories)
-    ?? resolveCandidate(getEnvironmentValue(envKeys), names)
-    ?? resolveFromDirectories(names, pathDirectories)
-}
-
 /** Resolve all external binaries before the UI and download processes start. */
 export async function resolveToolchain(appPaths: AppPaths = getAppPaths()): Promise<Toolchain> {
   const platform = process.platform
   const operatingSystem = getOperatingSystem(platform)
-  const pathDirectories = await getPathDirectories()
   const bundledDirectories = [appPaths.binDir]
-  const [ffmpegPath, ffprobePath, ytDlpPath] = await Promise.all([
-    resolveTool(TOOL_DEFINITIONS.ffmpeg.names, TOOL_DEFINITIONS.ffmpeg.envKeys, bundledDirectories, pathDirectories),
-    resolveTool(TOOL_DEFINITIONS.ffprobe.names, TOOL_DEFINITIONS.ffprobe.envKeys, bundledDirectories, pathDirectories),
-    resolveTool(TOOL_DEFINITIONS.ytDlp.names, TOOL_DEFINITIONS.ytDlp.envKeys, bundledDirectories, pathDirectories),
-  ])
+  const ffmpegPath = resolveFromDirectories(TOOL_DEFINITIONS.ffmpeg.names, bundledDirectories)
+  const ffprobePath = resolveFromDirectories(TOOL_DEFINITIONS.ffprobe.names, bundledDirectories)
+  const ytDlpPath = resolveFromDirectories(TOOL_DEFINITIONS.ytDlp.names, bundledDirectories)
   const diagnostics: string[] = []
 
-  const lookupHint = `请确认应用 bin 目录完整（${appPaths.binDir}），或通过环境变量/PATH 指定路径`
+  const lookupHint = `请确认应用 bin 目录完整：${appPaths.binDir}`
   if (!ffmpegPath) diagnostics.push(`未找到 ffmpeg，${lookupHint}`)
   if (!ffprobePath) diagnostics.push(`未找到 ffprobe，${lookupHint}`)
   if (!ytDlpPath) diagnostics.push(`未找到 yt-dlp，${lookupHint}`)
@@ -283,7 +132,7 @@ export async function resolveToolchain(appPaths: AppPaths = getAppPaths()): Prom
     ytDlpPath,
     ready: diagnostics.length === 0,
     diagnostics,
-    searchedDirectories: [...new Set([...bundledDirectories, ...getConfiguredDirectories(), ...pathDirectories])],
+    searchedDirectories: bundledDirectories,
   }
 }
 

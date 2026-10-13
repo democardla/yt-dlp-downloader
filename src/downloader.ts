@@ -59,7 +59,9 @@ export interface DownloadOptions {
 
 
 
-const CONFIG_PATH = getAppPaths().configFile
+function configPath(): string {
+  return getAppPaths().configFile
+}
 
 const BROWSER_COOKIE_ERROR = /(cookie|keyring|decrypt|browser profile|profile path|cookies database)/i
 
@@ -110,7 +112,7 @@ function tokenize(line: string): string[] {
 /** 读取并解析项目根目录下的 config 文件，得到默认 yt-dlp 参数列表 */
 export function loadConfigArgs(): string[] {
   try {
-    const configs = Configs.loadFromFileSync(CONFIG_PATH)
+    const configs = Configs.loadFromFileSync(configPath())
     return [
       configs.downloadNetwork,
       configs.output,

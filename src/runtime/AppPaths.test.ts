@@ -34,9 +34,8 @@ test("uses app-local resources and user-data in portable packaged mode", () => {
   expect(paths.binDir).toBe(join(dirname(executablePath), "bin"))
 })
 
-test("accepts explicit resource, bin, config and data directories from a launcher", () => {
+test("accepts explicit resource, config and data directories from a launcher", () => {
   const resourcesDir = resolve("bundle-resources")
-  const binDir = resolve("bundle-tools")
   const configDir = resolve("bundle-config")
   const dataDir = resolve("bundle-data")
   const paths = resolveAppPaths({
@@ -44,7 +43,6 @@ test("accepts explicit resource, bin, config and data directories from a launche
     environment: {
       ...process.env,
       YTDLP_DOWNLOADER_RESOURCES: resourcesDir,
-      YTDLP_DOWNLOADER_BIN: binDir,
       YTDLP_DOWNLOADER_CONFIG_DIR: configDir,
       YTDLP_DOWNLOADER_DATA_DIR: dataDir,
     },
@@ -52,7 +50,7 @@ test("accepts explicit resource, bin, config and data directories from a launche
   })
 
   expect(paths.resourcesDir).toBe(resourcesDir)
-  expect(paths.binDir).toBe(binDir)
+  expect(paths.binDir).toBe(join(resourcesDir, "bin"))
   expect(paths.configFile).toBe(join(configDir, "config.json"))
   expect(paths.historyFile).toBe(join(dataDir, "download-history.json"))
 })

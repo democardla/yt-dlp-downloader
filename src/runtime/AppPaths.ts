@@ -4,6 +4,8 @@ import {
   mkdirSync,
   readdirSync,
   statSync,
+  unlinkSync,
+  writeFileSync,
 } from "node:fs"
 import { homedir } from "node:os"
 import { basename, dirname, join, resolve } from "node:path"
@@ -144,6 +146,7 @@ export function resolveAppPaths(options: ResolveAppPathsOptions = {}): AppPaths 
     ?? defaultResourcesDirectory(platform, executableDir, sourceRoot, packaged)
 
   const portable = environment.YTDLP_DOWNLOADER_PORTABLE === "1"
+    || (packaged && existsSync(join(executableDir, "portable.flag")))
   const standard = standardDirectories(platform, environment)
   const developmentDirectory = join(workingDirectory, APP_ID)
   const portableDirectory = join(executableDir, "user-data")
@@ -151,8 +154,7 @@ export function resolveAppPaths(options: ResolveAppPathsOptions = {}): AppPaths 
     ?? (packaged ? (portable ? portableDirectory : standard.configDir) : developmentDirectory)
   const dataDir = cleanEnvironmentPath(environment.YTDLP_DOWNLOADER_DATA_DIR)
     ?? (packaged ? (portable ? portableDirectory : standard.dataDir) : developmentDirectory)
-  const binDir = cleanEnvironmentPath(environment.YTDLP_DOWNLOADER_BIN)
-    ?? selectBinDirectory(resourcesDir, target, packaged)
+  const binDir = selectBinDirectory(resourcesDir, target, packaged)
 
   return {
     mode,
@@ -188,13 +190,39 @@ function copyIfMissing(source: string, destination: string, actions: string[]): 
   actions.push(`${source} -> ${destination}`)
 }
 
+function applyDataDirectories(paths: AppPaths, configDir: string, dataDir: string): void {
+  paths.configDir = configDir
+  paths.dataDir = dataDir
+  paths.presetDir = configDir
+  paths.configFile = join(configDir, "config.json")
+  paths.historyFile = join(dataDir, "download-history.json")
+}
+
+function ensureWritableDirectory(directory: string): void {
+  mkdirSync(directory, { recursive: true })
+  const marker = join(directory, `.write-test-${process.pid}-${Date.now()}`)
+  writeFileSync(marker, "ok", "utf8")
+  unlinkSync(marker)
+}
+
 /** Create writable directories and migrate data from the former cwd layout. */
 export function initializeAppPaths(paths: AppPaths = getAppPaths()): string[] {
-  mkdirSync(paths.configDir, { recursive: true })
-  mkdirSync(paths.dataDir, { recursive: true })
-  mkdirSync(paths.presetDir, { recursive: true })
-
   const actions: string[] = []
+  try {
+    ensureWritableDirectory(paths.configDir)
+    if (resolve(paths.dataDir) !== resolve(paths.configDir)) ensureWritableDirectory(paths.dataDir)
+  } catch (primaryError) {
+    if (paths.mode !== "packaged") throw primaryError
+    const fallbackDirectory = join(paths.executableDir, "user-data")
+    applyDataDirectories(paths, fallbackDirectory, fallbackDirectory)
+    try {
+      ensureWritableDirectory(fallbackDirectory)
+      actions.push(`用户数据目录不可写，已回退到 ${fallbackDirectory}`)
+    } catch (fallbackError) {
+      throw new Error(`无法创建用户数据目录：${String(primaryError)}；回退目录也不可写：${String(fallbackError)}`)
+    }
+  }
+
   if (resolve(paths.legacyDir) === resolve(paths.configDir)
     && resolve(paths.legacyDir) === resolve(paths.dataDir)) {
     return actions

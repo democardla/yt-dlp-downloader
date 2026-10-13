@@ -3,7 +3,6 @@ import { dirname } from "node:path"
 import { normalizeFilePath } from "./Toolchain"
 import { getAppPaths } from "./AppPaths"
 
-const HISTORY_PATH = getAppPaths().historyFile
 const MAX_HISTORY_ITEMS = 10
 const LEGACY_SOURCE = "下载器"
 
@@ -56,7 +55,7 @@ export function normalizeDownloadHistoryEntries(values: unknown): DownloadHistor
 /** Load the most recent successful task results. */
 export function loadDownloadHistory(): DownloadHistoryEntry[] {
   try {
-    return normalizeDownloadHistoryEntries(JSON.parse(readFileSync(HISTORY_PATH, "utf8")))
+    return normalizeDownloadHistoryEntries(JSON.parse(readFileSync(getAppPaths().historyFile, "utf8")))
   } catch {
     return []
   }
@@ -77,10 +76,11 @@ export function rememberDownloadedFile(
     processedAt,
   }
   const entries = normalizeDownloadHistoryEntries([entry, ...loadDownloadHistory()])
+  const historyPath = getAppPaths().historyFile
 
   try {
-    mkdirSync(dirname(HISTORY_PATH), { recursive: true })
-    writeFileSync(HISTORY_PATH, JSON.stringify(entries, null, 2) + "\n", "utf8")
+    mkdirSync(dirname(historyPath), { recursive: true })
+    writeFileSync(historyPath, JSON.stringify(entries, null, 2) + "\n", "utf8")
   } catch {
     // A history write failure must not make an otherwise successful task fail.
   }

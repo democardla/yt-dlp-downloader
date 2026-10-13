@@ -105,7 +105,12 @@ function packagePlatformFiles(target: ReleaseTarget, layout: PackageLayout, vers
       resolve("packaging", "linux", "yt-dlp-downloader.desktop"),
       join(desktopDirectory, "yt-dlp-downloader.desktop"),
     )
+    return
   }
+
+  // The directory build is the portable Windows distribution. A future
+  // installer can omit this marker to use the standard per-user data path.
+  writeFileSync(join(layout.packageRoot, "portable.flag"), "portable\n", "utf8")
 }
 
 function main(): void {
