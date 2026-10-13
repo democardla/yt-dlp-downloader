@@ -32,6 +32,7 @@ import {
   rememberDownloadedFile,
 } from "../runtime/DownloadHistory"
 import { Configs } from "../handles/Configs"
+import { getAppPaths } from "../runtime/AppPaths"
 
 // ---------------------------------------------------------------------------
 // 数据模型
@@ -108,7 +109,7 @@ export function createDownloaderFeature(
     id: "out-dir",
     value: (() => {
       try {
-        const configured = Configs.loadFromFileSync(resolve("yt-dlp-downloader/config.json")).output.path
+        const configured = Configs.loadFromFileSync(getAppPaths().configFile).output.path
         return configured && configured !== "~/Downloads" ? configured : getDefaultDownloadDirectory(toolchain.platform)
       } catch {
         return getDefaultDownloadDirectory(toolchain.platform)
@@ -129,7 +130,7 @@ export function createDownloaderFeature(
   })
   formatContainer.add(formatSelect)
 
-  const presetDirectory = resolve("yt-dlp-downloader")
+  const presetDirectory = getAppPaths().presetDir
   function readPresetOptions() {
     try {
       const presetFiles = readdirSync(presetDirectory, { withFileTypes: true })
@@ -468,7 +469,7 @@ export function createDownloaderFeature(
     let subtitleFormat: DownloadOptions["subtitleFormat"]
     if (formatOpt === "subtitle") {
       try {
-        subtitleFormat = Configs.loadFromFileSync(resolve("yt-dlp-downloader/config.json")).subtitle.sub_format
+        subtitleFormat = Configs.loadFromFileSync(getAppPaths().configFile).subtitle.sub_format
       } catch {
         subtitleFormat = "vtt"
       }

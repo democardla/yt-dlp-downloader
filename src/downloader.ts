@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto"
 import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { resolve } from "node:path"
 import { Configs } from "./handles/Configs"
 import { OutputConfig } from "./handles/OutputConfig"
 import { YtTask } from "./handles/YtTask"
@@ -14,6 +13,7 @@ import {
   toolchainEnvironment,
   type Toolchain,
 } from "./runtime/Toolchain"
+import { getAppPaths } from "./runtime/AppPaths"
 
 /** 下载任务的实时进度回调 */
 export interface DownloadProgress {
@@ -59,7 +59,7 @@ export interface DownloadOptions {
 
 
 
-const CONFIG_PATH = resolve("yt-dlp-downloader/config.json")
+const CONFIG_PATH = getAppPaths().configFile
 
 const BROWSER_COOKIE_ERROR = /(cookie|keyring|decrypt|browser profile|profile path|cookies database)/i
 

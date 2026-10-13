@@ -1,12 +1,11 @@
 import { BoxRenderable, InputRenderable, InputRenderableEvents, ScrollBoxRenderable, TextRenderable, RGBA, type CliRenderer, type Renderable } from "@opentui/core"
 import { existsSync } from "node:fs"
-import { resolve } from "node:path"
 import { setAppConsoleEnabled, setAppConsoleTruncate, SidebarNavRenderable, StatusSelectRenderable } from "../components"
 import { Configs, formatSortToString, type DownloadNetworkConfig, type FormatSort, type GeneralConfig, type OutputConfig, type SubtitleConfig, type VideoFormatConfig } from "../handles"
 import { getDefaultDownloadDirectory } from "../runtime/Toolchain"
+import { getAppPaths } from "../runtime/AppPaths"
 
-// Use cwd so both Bun source mode and compiled single-file mode can write it.
-const CONFIG_PATH = resolve("yt-dlp-downloader/config.json")
+const CONFIG_PATH = getAppPaths().configFile
 type ConfigSection = "general" | "downloadNetwork" | "output" | "subtitle" | "videoFormat" | "console"
 type ConfigValue = string | number | boolean | null
 type ConfigObject = GeneralConfig | DownloadNetworkConfig | OutputConfig | SubtitleConfig | VideoFormatConfig | { enabled: boolean; truncate: boolean }

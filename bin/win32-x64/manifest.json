@@ -1,0 +1,23 @@
+{
+  "target": "win32-x64",
+  "tools": {
+    "ffmpeg": {
+      "version": "8.1.2-essentials_build-www.gyan.dev",
+      "sha256": "1326dde4c84ff1f96fe6b8916c5bed29e163e9b5dccf995f6f3db069d143ec5e",
+      "source": "https://www.gyan.dev/ffmpeg/builds/",
+      "license": "GPL-3.0-or-later"
+    },
+    "ffprobe": {
+      "version": "8.1.2-essentials_build-www.gyan.dev",
+      "sha256": "b49ccc7c6547b141ad5a2f6ec69cc04323d7133d7704d70b331b904c63eecb07",
+      "source": "https://www.gyan.dev/ffmpeg/builds/",
+      "license": "GPL-3.0-or-later"
+    },
+    "yt-dlp": {
+      "version": "2026.08.19",
+      "sha256": "66674953fe251b89f4d08c5f0e35e0728679bd67ab3d7d05c0562af101dd3e7a",
+      "source": "https://github.com/yt-dlp/yt-dlp/releases",
+      "license": "Unlicense"
+    }
+  }
+}

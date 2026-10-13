@@ -1,0 +1,4 @@
+packaging/macos/launcher text eol=lf
+packaging/linux/AppRun text eol=lf
+*.desktop text eol=lf
+*.plist text eol=lf

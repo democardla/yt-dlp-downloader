@@ -1,5 +1,8 @@
 import { accessSync, constants, statSync } from "node:fs"
 import { delimiter, dirname, join, resolve } from "node:path"
+import { getAppPaths, getDefaultDownloadDirectory, type AppPaths } from "./AppPaths"
+
+export { getDefaultDownloadDirectory } from "./AppPaths"
 
 export type HostOperatingSystem = "windows" | "macos" | "linux" | "freebsd" | "other"
 
@@ -12,13 +15,6 @@ export interface Toolchain {
   ready: boolean
   diagnostics: string[]
   searchedDirectories: string[]
-}
-
-export function getDefaultDownloadDirectory(platform: NodeJS.Platform = process.platform): string {
-  const home = platform === "win32"
-    ? process.env.USERPROFILE ?? [process.env.HOMEDRIVE, process.env.HOMEPATH].filter(Boolean).join("\\")
-    : process.env.HOME
-  return home ? join(home, "Downloads") : "Downloads"
 }
 
 const TOOL_DEFINITIONS = {
@@ -251,28 +247,30 @@ function getConfiguredDirectories(): string[] {
 async function resolveTool(
   names: readonly string[],
   envKeys: readonly string[],
+  bundledDirectories: readonly string[],
   pathDirectories: readonly string[],
 ): Promise<string | null> {
-  // Scan the current PATH first on every platform. This prevents a stale
-  // explicit path from hiding a newly configured binary in PATH. Windows gets
-  // .exe/.cmd/.bat candidates through candidateNames().
-  return resolveFromDirectories(names, pathDirectories)
+  // Packaged applications are self-contained. Explicit overrides and PATH
+  // remain available for development and recovery from a damaged package.
+  return resolveFromDirectories(names, bundledDirectories)
     ?? resolveCandidate(getEnvironmentValue(envKeys), names)
+    ?? resolveFromDirectories(names, pathDirectories)
 }
 
 /** Resolve all external binaries before the UI and download processes start. */
-export async function resolveToolchain(): Promise<Toolchain> {
+export async function resolveToolchain(appPaths: AppPaths = getAppPaths()): Promise<Toolchain> {
   const platform = process.platform
   const operatingSystem = getOperatingSystem(platform)
   const pathDirectories = await getPathDirectories()
+  const bundledDirectories = [appPaths.binDir]
   const [ffmpegPath, ffprobePath, ytDlpPath] = await Promise.all([
-    resolveTool(TOOL_DEFINITIONS.ffmpeg.names, TOOL_DEFINITIONS.ffmpeg.envKeys, pathDirectories),
-    resolveTool(TOOL_DEFINITIONS.ffprobe.names, TOOL_DEFINITIONS.ffprobe.envKeys, pathDirectories),
-    resolveTool(TOOL_DEFINITIONS.ytDlp.names, TOOL_DEFINITIONS.ytDlp.envKeys, pathDirectories),
+    resolveTool(TOOL_DEFINITIONS.ffmpeg.names, TOOL_DEFINITIONS.ffmpeg.envKeys, bundledDirectories, pathDirectories),
+    resolveTool(TOOL_DEFINITIONS.ffprobe.names, TOOL_DEFINITIONS.ffprobe.envKeys, bundledDirectories, pathDirectories),
+    resolveTool(TOOL_DEFINITIONS.ytDlp.names, TOOL_DEFINITIONS.ytDlp.envKeys, bundledDirectories, pathDirectories),
   ])
   const diagnostics: string[] = []
 
-  const lookupHint = "请确认它已安装、位于 PATH 中，或通过对应环境变量指定路径"
+  const lookupHint = `请确认应用 bin 目录完整（${appPaths.binDir}），或通过环境变量/PATH 指定路径`
   if (!ffmpegPath) diagnostics.push(`未找到 ffmpeg，${lookupHint}`)
   if (!ffprobePath) diagnostics.push(`未找到 ffprobe，${lookupHint}`)
   if (!ytDlpPath) diagnostics.push(`未找到 yt-dlp，${lookupHint}`)
@@ -285,7 +283,7 @@ export async function resolveToolchain(): Promise<Toolchain> {
     ytDlpPath,
     ready: diagnostics.length === 0,
     diagnostics,
-    searchedDirectories: [...new Set([...getConfiguredDirectories(), ...pathDirectories])],
+    searchedDirectories: [...new Set([...bundledDirectories, ...getConfiguredDirectories(), ...pathDirectories])],
   }
 }
 
@@ -293,7 +291,7 @@ export async function resolveToolchain(): Promise<Toolchain> {
 export function toolchainEnvironment(toolchain: Toolchain): Record<string, string> {
   const pathKey = Object.keys(process.env).find((key) => key.toLowerCase() === "path") ?? "PATH"
   const currentPath = process.env[pathKey] ?? ""
-  const directories = [toolchain.ffmpegPath, toolchain.ffprobePath]
+  const directories = [toolchain.ffmpegPath, toolchain.ffprobePath, toolchain.ytDlpPath]
     .filter((path): path is string => Boolean(path))
     .map((path) => path.slice(0, Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"))))
     .filter(Boolean)

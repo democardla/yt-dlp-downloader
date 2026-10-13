@@ -1,11 +1,20 @@
 {
   "name": "yt-dlp-downloader",
+  "version": "0.1.0-beta.1",
   "module": "src/index.tsx",
   "type": "module",
   "private": true,
   "scripts": {
     "dev": "bun run --watch src/index.ts",
-    "build": "bun build --compile ./src/index.ts --outfile ./dist/yt-dlp-downloader"
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "build": "bun build --compile ./src/index.ts --outfile ./dist/yt-dlp-downloader",
+    "build:app": "bun run scripts/build-app.ts",
+    "build:app:windows": "bun run scripts/build-app.ts --target win32-x64",
+    "build:app:macos:x64": "bun run scripts/build-app.ts --target darwin-x64",
+    "build:app:macos:arm64": "bun run scripts/build-app.ts --target darwin-arm64",
+    "build:app:linux": "bun run scripts/build-app.ts --target linux-x64",
+    "verify:bin": "bun run scripts/verify-bin.ts"
   },
   "imports": {
     "@components": "./src/components/index.ts",

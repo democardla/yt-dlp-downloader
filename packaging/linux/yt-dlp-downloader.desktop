@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=YT-DLP Downloader
+Comment=Download and convert media in an OpenTUI interface
+Exec=yt-dlp-downloader
+Terminal=true
+Categories=AudioVideo;Utility;

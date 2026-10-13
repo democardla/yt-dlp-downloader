@@ -7,8 +7,23 @@ out
 dist
 *.tgz
 
-# local downloader binaries (not committed to the public repository)
-/bin/
+# local downloader binaries (large executables remain untracked)
+/bin/**
+!/bin/README.md
+!/bin/manifest.example.json
+!/bin/*/manifest.json
+!/bin/win32-x64/
+!/bin/win32-x64/.gitkeep
+!/bin/win32-arm64/
+!/bin/win32-arm64/.gitkeep
+!/bin/darwin-x64/
+!/bin/darwin-x64/.gitkeep
+!/bin/darwin-arm64/
+!/bin/darwin-arm64/.gitkeep
+!/bin/linux-x64/
+!/bin/linux-x64/.gitkeep
+!/bin/linux-arm64/
+!/bin/linux-arm64/.gitkeep
 
 # local task history contains machine-specific file paths
 yt-dlp-downloader/download-history.json

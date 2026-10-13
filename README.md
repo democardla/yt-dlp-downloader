@@ -52,7 +52,7 @@
 - `ffprobe`
 - Chrome（可选，仅字幕查询和字幕下载需要）
 
-程序启动时会先检查对应环境变量指定的路径，再从系统 `PATH` 中逐个目录查找三个外部工具。Windows 会自动尝试 `.exe`、`.cmd` 和 `.bat` 后缀。
+程序启动时会依次检查应用自带的 `bin` 目录、对应环境变量和系统 `PATH`。Windows 会自动尝试 `.exe`、`.cmd` 和 `.bat` 后缀。
 
 可用的工具路径环境变量包括 `FFMPEG_PATH`、`FFPROBE_PATH` 和 `YTDLP_PATH`；同时兼容项目中定义的 `*_BINARY`、`*_BIN` 等别名。
 
@@ -142,15 +142,61 @@ bun build --compile \
   --outfile dist/yt-dlp-downloader.exe
 ```
 
+## 构建跨平台 App（Beta）
+
+发布构建会把 OpenTUI 主程序和对应平台的工具一起组装。先将三个独立可执行文件放入目标目录：
+
+```text
+bin/win32-x64/     # ffmpeg.exe、ffprobe.exe、yt-dlp.exe
+bin/darwin-x64/    # ffmpeg、ffprobe、yt-dlp
+bin/darwin-arm64/  # ffmpeg、ffprobe、yt-dlp
+bin/linux-x64/     # ffmpeg、ffprobe、yt-dlp
+```
+
+验证 Windows x64 工具：
+
+```bash
+bun run verify:bin --target win32-x64
+```
+
+构建对应平台应用包：
+
+```bash
+bun run build:app:windows
+bun run build:app:macos:x64
+bun run build:app:macos:arm64
+bun run build:app:linux
+```
+
+生成结果位于 `dist/apps/<平台-架构>/`。Windows 生成可双击运行的控制台应用目录；macOS 生成 `.app`；Linux 生成可继续交给 `appimagetool` 的 `AppDir`。实际发布时应在目标操作系统的原生构建环境中执行相应命令。
+
+发布包可以使用以下非交互命令进行检查：
+
+```bash
+yt-dlp-downloader --version
+yt-dlp-downloader --print-paths
+yt-dlp-downloader --doctor
+```
+
+`--doctor` 会打印应用模式、目标平台、资源和用户数据目录，以及三个内置工具的实际解析结果；工具缺失时返回非零退出码。
+
 OpenTUI 是终端界面应用，编译后的文件需要在 Terminal、PowerShell 或其他终端环境中运行。macOS `.app` 的 Terminal 启动器方案请参考 [RELEASE_NOTES.md](./RELEASE_NOTES.md)。
 
 ## 配置文件
 
-首次启动时会创建：
+源码开发模式首次启动时会创建：
 
 ```text
 yt-dlp-downloader/config.json
 ```
+
+打包后的应用使用系统用户数据目录：
+
+- Windows：`%APPDATA%\YT-DLP Downloader\`
+- macOS：`~/Library/Application Support/YT-DLP Downloader/`
+- Linux：`$XDG_CONFIG_HOME/yt-dlp-downloader/` 和 `$XDG_DATA_HOME/yt-dlp-downloader/`
+
+首次运行打包应用时，如果启动目录下存在旧版 `yt-dlp-downloader` 数据目录，程序会迁移尚未存在的配置、历史和 `.pre` 文件。设置 `YTDLP_DOWNLOADER_PORTABLE=1` 可让打包应用改用程序旁边的 `user-data` 目录。
 
 配置文件包含：
 
@@ -266,7 +312,7 @@ yt-dlp-downloader/           # 配置、历史记录和预设文件目录
 
 ## 注意事项
 
-- `yt-dlp`、`ffmpeg` 和 `ffprobe` 不会被打包进应用，需要单独安装。
+- 源码开发和旧版单文件构建仍可使用系统中的 `yt-dlp`、`ffmpeg` 和 `ffprobe`；跨平台 App 构建会从对应的 `bin/<平台-架构>` 目录复制它们。
 - 字幕轨道查询和下载依赖本机 Chrome 的默认用户配置及可读取的 Cookie。
 - 下载器的“已完成”列表只保留当前会话；跨会话结果请在顶部“历史”页面查看。
 - 转换任务先写入 `.partial` 临时文件，成功后才生成最终文件。

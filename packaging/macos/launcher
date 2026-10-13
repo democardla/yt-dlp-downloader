@@ -1,0 +1,16 @@
+#!/bin/sh
+CONTENTS_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+EXECUTABLE_PATH="$CONTENTS_DIR/Resources/app/yt-dlp-downloader"
+RESOURCES_PATH="$CONTENTS_DIR/Resources"
+
+/usr/bin/osascript - "$EXECUTABLE_PATH" "$RESOURCES_PATH" <<'APPLESCRIPT'
+on run argv
+  set executablePath to item 1 of argv
+  set resourcesPath to item 2 of argv
+  set commandText to "env YTDLP_DOWNLOADER_PACKAGED=1 YTDLP_DOWNLOADER_RESOURCES=" & quoted form of resourcesPath & " YTDLP_DOWNLOADER_BIN=" & quoted form of (resourcesPath & "/bin") & " " & quoted form of executablePath
+  tell application "Terminal"
+    activate
+    do script commandText
+  end tell
+end run
+APPLESCRIPT

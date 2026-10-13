@@ -7,7 +7,7 @@ import {
   type CliRenderer,
   type Renderable,
 } from "@opentui/core"
-import { basename, resolve } from "node:path"
+import { basename } from "node:path"
 import {
   ActionButtonRenderable,
   FileDropInputRenderable,
@@ -26,6 +26,7 @@ import {
 } from "../runtime/MediaConverter"
 import { ConversionScheduler, type ConversionTaskHandle, type ConversionTaskStatus } from "../runtime/ConversionScheduler"
 import { getDefaultDownloadDirectory, revealInFileManager, type Toolchain } from "../runtime/Toolchain"
+import { getAppPaths } from "../runtime/AppPaths"
 
 const ACCENT = RGBA.fromHex("#7FC7FF")
 const AUDIO_FORMATS: AudioOutputFormat[] = ["mp3", "m4a", "flac", "wav", "opus", "ogg"]
@@ -39,7 +40,7 @@ export interface ConversionFeature {
 
 function defaultOutputDirectory(toolchain: Toolchain): string {
   try {
-    const configured = Configs.loadFromFileSync(resolve("yt-dlp-downloader/config.json")).output.path
+    const configured = Configs.loadFromFileSync(getAppPaths().configFile).output.path
     return configured && configured !== "~/Downloads"
       ? configured
       : getDefaultDownloadDirectory(toolchain.platform)
@@ -54,7 +55,7 @@ function formatOptions<T extends string>(formats: readonly T[]) {
 
 function configuredMaxConcurrentTasks(): number {
   try {
-    const value = Configs.loadFromFileSync(resolve("yt-dlp-downloader/config.json")).general.max_concurrent_tasks
+    const value = Configs.loadFromFileSync(getAppPaths().configFile).general.max_concurrent_tasks
     return Number.isFinite(value) ? Math.max(1, Math.floor(value)) : 2
   } catch {
     return 2

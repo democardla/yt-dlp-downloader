@@ -1,0 +1,23 @@
+{
+  "target": "win32-x64",
+  "tools": {
+    "ffmpeg": {
+      "version": "replace-with-version",
+      "sha256": "replace-with-sha256",
+      "source": "replace-with-download-url",
+      "license": "LGPL-2.1-or-later or GPL-2.0-or-later"
+    },
+    "ffprobe": {
+      "version": "replace-with-version",
+      "sha256": "replace-with-sha256",
+      "source": "replace-with-download-url",
+      "license": "LGPL-2.1-or-later or GPL-2.0-or-later"
+    },
+    "yt-dlp": {
+      "version": "replace-with-version",
+      "sha256": "replace-with-sha256",
+      "source": "https://github.com/yt-dlp/yt-dlp/releases",
+      "license": "Unlicense"
+    }
+  }
+}

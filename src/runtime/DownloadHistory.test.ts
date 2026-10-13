@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { resolve } from "node:path"
 import { normalizeDownloadHistoryEntries } from "./DownloadHistory"
 
 test("normalizes legacy path history and current task metadata", () => {
@@ -9,7 +10,7 @@ test("normalizes legacy path history and current task metadata", () => {
   ])
 
   expect(entries).toEqual([
-    { filePath: "/tmp/video.mp4", source: "下载器", processedAt: "" },
-    { filePath: "/tmp/subtitle.srt", source: "字幕下载", processedAt: "2026-09-20T10:00:00.000Z" },
+    { filePath: resolve("/tmp/video.mp4"), source: "下载器", processedAt: "" },
+    { filePath: resolve("/tmp/subtitle.srt"), source: "字幕下载", processedAt: "2026-09-20T10:00:00.000Z" },
   ])
 })

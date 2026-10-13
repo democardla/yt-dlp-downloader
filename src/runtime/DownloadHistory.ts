@@ -1,8 +1,9 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
-import { dirname, resolve } from "node:path"
+import { dirname } from "node:path"
 import { normalizeFilePath } from "./Toolchain"
+import { getAppPaths } from "./AppPaths"
 
-const HISTORY_PATH = resolve("yt-dlp-downloader/download-history.json")
+const HISTORY_PATH = getAppPaths().historyFile
 const MAX_HISTORY_ITEMS = 10
 const LEGACY_SOURCE = "下载器"
 

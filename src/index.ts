@@ -14,33 +14,22 @@ import {
   type DownloadHistoryFeature,
 } from "./ui"
 import { ActionButtonRenderable, ConsolePanelRenderable, TabBarRenderable, writeAppConsole } from "./components"
-import { access, mkdir } from "node:fs/promises";
 import { resolveToolchain } from "./runtime/Toolchain"
 import { detectChrome } from "./runtime/Browser"
+import { getAppPaths, initializeAppPaths } from "./runtime/AppPaths"
+import { handleCliCommand } from "./runtime/CliCommands"
 
-import { 
-  Configs,
-  DownloadNetworkConfig,
-  OutputConfig,
-  SubtitleConfig,
-  VideoFormatConfig
-} from "./handles"
+import { Configs } from "./handles"
 
 
 
 import "reflect-metadata"
 
 
-const configs = new Configs();
-
-
-const dir = "yt-dlp-downloader";
-
-try {
-    await access(dir);
-} catch {
-    await mkdir(dir, { recursive: true });
-}
+const appPaths = getAppPaths()
+const cliExitCode = await handleCliCommand(Bun.argv.slice(2), appPaths)
+if (cliExitCode !== null) process.exit(cliExitCode)
+const migrationActions = initializeAppPaths(appPaths)
 
 // ---------------------------------------------------------------------------
 // 渲染器
@@ -66,7 +55,7 @@ interface Feature {
 const settings: Feature = createSettingsFeature(renderer)
 let appConfigs: Configs
 try {
-  appConfigs = Configs.loadFromFileSync("yt-dlp-downloader/config.json")
+  appConfigs = Configs.loadFromFileSync(appPaths.configFile)
 } catch {
   appConfigs = new Configs()
 }
@@ -75,13 +64,21 @@ const consolePanel = new ConsolePanelRenderable(renderer, {
   truncate: appConfigs.console.truncate,
 })
 
+writeAppConsole("log", `启动路径：模式=${appPaths.mode}，目标=${appPaths.target}`)
+writeAppConsole("log", `启动路径：bin=${appPaths.binDir}`)
+writeAppConsole("log", `启动路径：配置=${appPaths.configFile}`)
+writeAppConsole("log", `启动路径：历史=${appPaths.historyFile}`)
+for (const action of migrationActions) {
+  writeAppConsole("log", `数据迁移：${action}`)
+}
+
 const chrome = detectChrome()
 writeAppConsole(chrome.available ? "log" : "warn", `启动检测：Chrome = ${chrome.chromePath ?? "未找到"}`)
 
 // Resolve the host and all external binaries after the console exists, so the
 // startup lookup is visible in the app log just like a manual refresh.
-writeAppConsole("log", "启动检测：开始扫描工具路径（环境变量路径 + PATH）")
-const toolchain = await resolveToolchain()
+writeAppConsole("log", "启动检测：开始扫描工具路径（应用 bin + 环境变量路径 + PATH）")
+const toolchain = await resolveToolchain(appPaths)
 logToolchainResult("启动检测", toolchain)
 
 // 下载器（真实功能）
@@ -203,7 +200,7 @@ async function refreshToolchain() {
   refreshingToolchain = true
   writeAppConsole("log", "刷新工具：按钮已触发，开始重新扫描工具路径")
   try {
-    Object.assign(toolchain, await resolveToolchain())
+    Object.assign(toolchain, await resolveToolchain(appPaths))
     logToolchainResult("刷新工具", toolchain)
 
     if (toolchain.ready && refreshButton) {
