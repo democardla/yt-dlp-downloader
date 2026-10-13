@@ -25,6 +25,7 @@ AppPublisherURL=https://github.com/democardla/yt-dlp-downloader
 AppSupportURL=https://github.com/democardla/yt-dlp-downloader
 AppUpdatesURL=https://github.com/democardla/yt-dlp-downloader/releases
 DefaultDirName={localappdata}\Programs\YT-DLP Downloader
+DisableDirPage=no
 DefaultGroupName=YT-DLP Downloader
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
@@ -40,7 +41,6 @@ ChangesAssociations=no
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
-Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加快捷方式："; Flags: unchecked
